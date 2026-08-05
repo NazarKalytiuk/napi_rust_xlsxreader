@@ -1,0 +1,326 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to release, for example v1.0.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+env:
+  APP_NAME: rusc_xlsx_reader
+  CARGO_TERM_COLOR: always
+  MACOSX_DEPLOYMENT_TARGET: '11.0'
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  validate:
+    name: Validate release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      npm-tag: ${{ steps.release.outputs.npm-tag }}
+      release-tag: ${{ steps.release.outputs.release-tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: npm ci
+      - id: release
+        run: npm run release:check -- "$RELEASE_TAG" --registry
+      - run: npm run check
+      - run: npm pack --dry-run --ignore-scripts
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: validate
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            command: npm run build -- --target x86_64-apple-darwin
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            command: npm run build -- --target aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            command: npm run build -- --target x86_64-pc-windows-msvc
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            command: npm run build -- --target aarch64-pc-windows-msvc
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            command: npm run build -- --target x86_64-unknown-linux-gnu --use-napi-cross
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            command: npm run build -- --target aarch64-unknown-linux-gnu --use-napi-cross
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            command: npm run build -- --target x86_64-unknown-linux-musl -x
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+
+      - uses: mlugg/setup-zig@v2
+        if: contains(matrix.target, 'musl')
+        with:
+          version: 0.14.1
+
+      - uses: taiki-e/install-action@v2
+        if: contains(matrix.target, 'musl')
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          tool: cargo-zigbuild
+
+      - run: npm ci
+      - run: ${{ matrix.command }}
+        shell: bash
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: binding-${{ matrix.target }}
+          path: ${{ env.APP_NAME }}.*.node
+          if-no-files-found: error
+          retention-days: 7
+
+  universal-macos:
+    name: Build universal macOS binding
+    needs: build
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - run: npm ci
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: binding-x86_64-apple-darwin
+          path: .
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: binding-aarch64-apple-darwin
+          path: .
+
+      - run: npm run universal
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: binding-universal-apple-darwin
+          path: ${{ env.APP_NAME }}.darwin-universal.node
+          if-no-files-found: error
+          retention-days: 7
+
+  test-bindings:
+    name: Test ${{ matrix.target }} / Node ${{ matrix.node }}
+    needs: build
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-pc-windows-msvc
+          - aarch64-pc-windows-msvc
+          - x86_64-unknown-linux-gnu
+          - aarch64-unknown-linux-gnu
+        node: [22, 24]
+        include:
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            architecture: x64
+          - target: aarch64-pc-windows-msvc
+            os: windows-11-arm
+            architecture: arm64
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            architecture: x64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            architecture: arm64
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          architecture: ${{ matrix.architecture }}
+          package-manager-cache: false
+
+      - run: npm ci
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: binding-${{ matrix.target }}
+          path: .
+
+      - run: npm test
+
+  test-linux-musl:
+    name: Test x86_64 Linux musl / Node ${{ matrix.node }}
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: binding-x86_64-unknown-linux-musl
+          path: .
+
+      - name: Test binding in Alpine Linux
+        run: >-
+          docker run --rm --platform linux/amd64
+          -v "${{ github.workspace }}:/workspace"
+          -w /workspace
+          node:${{ matrix.node }}-alpine
+          sh -lc "npm ci && npm test"
+
+  test-macos-universal:
+    name: Test universal macOS ${{ matrix.architecture }} / Node ${{ matrix.node }}
+    needs: universal-macos
+    runs-on: macos-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [x64, arm64]
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          architecture: ${{ matrix.architecture }}
+          package-manager-cache: false
+
+      - run: npm ci
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: binding-universal-apple-darwin
+          path: .
+
+      - run: npm test
+
+  publish:
+    name: Publish npm packages and GitHub release
+    needs:
+      - validate
+      - build
+      - universal-macos
+      - test-bindings
+      - test-linux-musl
+      - test-macos-universal
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: npm
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org/
+          package-manager-cache: false
+
+      - run: npm ci
+      - run: npx napi create-npm-dirs
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: binding-*
+          path: artifacts
+          merge-multiple: true
+
+      - run: npm run artifacts
+      - run: npm run release:verify-artifacts -- --manifest artifacts/SHA256SUMS
+      - run: npm pack --dry-run --ignore-scripts
+
+      - name: Publish platform and root packages with provenance
+        run: |
+          npm config set provenance true
+          npm publish --access public --provenance --tag "${{ needs.validate.outputs.npm-tag }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Upload checksums to GitHub release
+        run: gh release upload "$RELEASE_TAG" artifacts/SHA256SUMS --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify published release
+        run: npm run release:verify-published -- "${{ needs.validate.outputs.version }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

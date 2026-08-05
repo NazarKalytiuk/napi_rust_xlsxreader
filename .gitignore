@@ -1,0 +1,7 @@
+/target/
+/node_modules/
+/npm/
+*.node
+.DS_Store
+/tests/.tmp/
+/benchmarks/.tmp/
