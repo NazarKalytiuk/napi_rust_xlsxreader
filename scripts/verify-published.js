@@ -11,6 +11,8 @@ const version = process.argv[2] || packageJson.version
 const targets = releaseTargets(packageJson)
 const errors = []
 const registry = 'https://registry.npmjs.org'
+const maxFetchAttempts = 120
+const fetchRetryDelayMilliseconds = 5000
 
 function check(condition, message) {
   if (!condition) errors.push(message)
@@ -32,7 +34,7 @@ function sleep(milliseconds) {
 
 async function fetchJson(url, label, options = {}) {
   let lastFailure
-  for (let attempt = 1; attempt <= 12; attempt += 1) {
+  for (let attempt = 1; attempt <= maxFetchAttempts; attempt += 1) {
     try {
       const response = await fetch(url, options)
       if (response.ok) return await response.json()
@@ -41,7 +43,7 @@ async function fetchJson(url, label, options = {}) {
     } catch (error) {
       lastFailure = error.message
     }
-    if (attempt < 12) await sleep(5000)
+    if (attempt < maxFetchAttempts) await sleep(fetchRetryDelayMilliseconds)
   }
   throw new Error(`Unable to read ${label}: ${lastFailure}`)
 }

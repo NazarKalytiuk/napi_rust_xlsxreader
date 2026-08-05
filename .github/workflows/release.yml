@@ -306,6 +306,13 @@ jobs:
       - run: npm run artifacts
       - run: npm run release:verify-artifacts -- --manifest artifacts/SHA256SUMS
       - run: npm pack --dry-run --ignore-scripts
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-checksums
+          path: artifacts/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 7
+
 
       - name: Publish platform and root packages with provenance
         run: |
@@ -314,6 +321,32 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  finalize:
+    name: Finalize and verify published release
+    needs:
+      - validate
+      - publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - run: npm ci
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-checksums
+          path: artifacts
 
       - name: Upload checksums to GitHub release
         run: gh release upload "$RELEASE_TAG" artifacts/SHA256SUMS --clobber

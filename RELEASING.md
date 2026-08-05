@@ -73,10 +73,10 @@ The workflow performs these steps before publishing the root package:
 4. Combines and tests both slices of the universal macOS binary.
 5. Runs the JavaScript suite on Node.js 22 and 24 for Windows x64/ARM64, Linux glibc x64/ARM64, Linux musl x64, and macOS universal x64/ARM64.
 6. Assembles NAPI platform packages and rejects missing, extra, mismatched, or empty artifacts.
-7. Publishes platform packages first and the root package last with SLSA provenance.
-8. Creates the GitHub release, uploads all six native binaries plus `SHA256SUMS`, and verifies npm metadata, dist-tags, provenance, and GitHub assets.
+7. Publishes platform packages first and the root package last with SLSA provenance, creates the GitHub release, and uploads all six native binaries.
+8. Uploads `SHA256SUMS` in a separate idempotent finalization job, then verifies npm metadata, dist-tags, provenance, and GitHub assets.
 
-A green build job alone is not a release; the final `Verify published release` step must pass.
+A green build or publish job alone is not a release; the final `Finalize and verify published release` job must pass. New npm package documents can lag version metadata, so the verifier retries retriable registry responses for up to ten minutes.
 
 ## Trusted publishing after the first release
 
@@ -96,9 +96,10 @@ Configure the root and all six platform packages before removing `NPM_TOKEN`. Te
 Do not create a new version immediately and do not rebuild different binaries under a partially published version.
 
 1. Inspect the failed workflow and npm metadata for the root plus all six platform packages.
-2. If the publish job failed but its build artifacts are still retained, use GitHub's **Re-run failed jobs** so the same artifacts are reused.
-3. Do not use a fresh manual workflow dispatch after any platform package has published; that would rebuild artifacts for an immutable npm version.
-4. If every platform package exists and only the root failed, follow the NAPI-RS partial-release procedure and publish the unchanged root tarball with lifecycle scripts disabled.
-5. If the root exists with a missing platform package, publish the missing unchanged platform artifact immediately or deprecate the broken root version.
+2. If the publish job failed before all packages exist and its build artifacts are still retained, use GitHub's **Re-run failed jobs** so the same artifacts are reused.
+3. If publishing succeeded but `Finalize and verify published release` failed, wait for npm registry propagation and re-run failed jobs. The finalization job never republishes an immutable package version.
+4. Do not use a fresh manual workflow dispatch after any platform package has published; that would rebuild artifacts for an immutable npm version.
+5. If every platform package exists and only the root failed, follow the NAPI-RS partial-release procedure and publish the unchanged root tarball with lifecycle scripts disabled.
+6. If the root exists with a missing platform package, publish the missing unchanged platform artifact immediately or deprecate the broken root version.
 
 Never use `npm publish --dry-run` in this repository: npm lifecycle scripts can invoke `napi prepublish` and publish real platform packages. Use `npm pack --dry-run --ignore-scripts` and `napi prepublish -t npm --dry-run` instead.
