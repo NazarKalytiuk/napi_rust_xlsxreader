@@ -45,18 +45,27 @@ Before tagging, confirm the branch CI workflow is green. `package.json`, `packag
 
 ## Create a release
 
-For releases after 1.0.0, let npm update the package and lockfile, and let the `version` lifecycle run `napi version` to synchronize Rust metadata and generated bindings:
+`main` is protected, so the version bump reaches it through a pull request like any other change; only the tag is pushed directly.
+
+On a release branch, bump the npm version without tagging:
 
 ```bash
-npm version patch -m "%s"
-git push origin main --follow-tags
+npm version patch --no-git-tag-version
 ```
 
-Use `minor` or `major` instead of `patch` as appropriate. For a prerelease:
+Use `minor`, `major`, or `prerelease --preid next` instead of `patch` as appropriate. This updates `package.json` and `package-lock.json`. Its `version` lifecycle runs `napi version`, which only updates the generated `npm/` platform directories, so synchronize the Rust crate and the generated loader yourself:
+
+1. Set `version` in `Cargo.toml` to the new version.
+2. Run `npm run build` to refresh `Cargo.lock` and regenerate `index.js`.
+3. Run `npm run release:check` and the preflight above.
+
+Commit the result with the bare version as its message, open a pull request, and merge it once CI is green. Then tag the merged commit on `main` and push only the tag:
 
 ```bash
-npm version prerelease --preid next -m "%s"
-git push origin main --follow-tags
+git switch main
+git pull --ff-only
+git tag -a vX.Y.Z -m vX.Y.Z
+git push origin vX.Y.Z
 ```
 
 The release workflow accepts only an existing tag exactly equal to `v<package.json version>`. Stable versions publish with the `latest` npm dist-tag; prereleases publish with `next`.
