@@ -25,6 +25,10 @@ const TARGETS = new Map([
     'x86_64-unknown-linux-musl',
     { suffix: 'linux-x64-musl', os: ['linux'], cpu: ['x64'], libc: ['musl'] },
   ],
+  [
+    'aarch64-unknown-linux-musl',
+    { suffix: 'linux-arm64-musl', os: ['linux'], cpu: ['arm64'], libc: ['musl'] },
+  ],
 ])
 
 function releaseTargets(packageJson) {

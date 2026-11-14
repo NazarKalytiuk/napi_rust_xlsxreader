@@ -165,7 +165,7 @@ The package ships strict TypeScript declarations for CommonJS and ESM consumers.
 | macOS | Universal binary: x64 and arm64 |
 | Windows | x64 and arm64 MSVC |
 | Linux glibc | x64 and arm64 |
-| Linux musl | x64 |
+| Linux musl | x64 and arm64 |
 
 CI tests Node.js 22, 24, and 26. Native packages are selected through exact-version optional dependencies; installation does not download binaries in a postinstall script.
 

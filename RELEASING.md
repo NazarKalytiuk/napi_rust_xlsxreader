@@ -1,6 +1,6 @@
 # Release runbook
 
-This package publishes one root npm package and six platform packages through `.github/workflows/release.yml`. npm publication is not atomic: never replace artifacts or rebuild already-published platform packages for the same version.
+This package publishes one root npm package and seven platform packages through `.github/workflows/release.yml`. npm publication is not atomic: never replace artifacts or rebuild already-published platform packages for the same version.
 
 ## One-time setup
 
@@ -10,14 +10,14 @@ This package publishes one root npm package and six platform packages through `.
    - URL: `https://github.com/NazarKalytiuk/napi_rust_xlsxreader`
 2. Push this repository and make `main` the default protected branch.
 3. In GitHub, create an environment named `npm`. Add required reviewers if releases should require manual approval.
-4. Configure npm trusted publishing for the root and all six platform packages, as described in [npm authentication](#npm-authentication).
+4. Configure npm trusted publishing for the root and all seven platform packages, as described in [npm authentication](#npm-authentication).
 5. Enable GitHub Actions for the repository. The release matrix uses GitHub-hosted x64 and ARM64 runners.
 
 The release job has `id-token: write` for npm trusted publishing and provenance, and `contents: write` for the GitHub release. It needs no repository or environment secrets: npm credentials come from OIDC, and Actions supplies `GITHUB_TOKEN`.
 
 ## Published package set
 
-A release is complete only when all seven packages exist at the same exact version:
+A release is complete only when all eight packages exist at the same exact version:
 
 - `@nazarkalytiuk/rusc-xlsx-reader`
 - `@nazarkalytiuk/rusc-xlsx-reader-darwin-universal`
@@ -26,6 +26,7 @@ A release is complete only when all seven packages exist at the same exact versi
 - `@nazarkalytiuk/rusc-xlsx-reader-linux-x64-gnu`
 - `@nazarkalytiuk/rusc-xlsx-reader-linux-arm64-gnu`
 - `@nazarkalytiuk/rusc-xlsx-reader-linux-x64-musl`
+- `@nazarkalytiuk/rusc-xlsx-reader-linux-arm64-musl`
 
 ## Preflight
 
@@ -75,20 +76,20 @@ For the initial 1.0.0 release, the files are already versioned `1.0.0`. After co
 
 The workflow performs these steps before publishing the root package:
 
-1. Validates tag, package metadata, synchronized versions, target list, and npm version availability.
+1. Validates tag, package metadata, synchronized versions, and target list, and checks that every package already exists on npm without this version.
 2. Runs Rust formatting, Clippy with warnings denied, Rust tests, and TypeScript checks.
 3. Builds every configured native target.
 4. Combines and tests both slices of the universal macOS binary.
-5. Runs the JavaScript suite on Node.js 22, 24, and 26 for Windows x64/ARM64, Linux glibc x64/ARM64, Linux musl x64, and macOS universal x64/ARM64.
+5. Runs the JavaScript suite on Node.js 22, 24, and 26 for Windows x64/ARM64, Linux glibc x64/ARM64, Linux musl x64/ARM64, and macOS universal x64/ARM64.
 6. Assembles NAPI platform packages and rejects missing, extra, mismatched, or empty artifacts.
-7. Publishes platform packages first and the root package last with SLSA provenance, creates the GitHub release, and uploads all six native binaries.
+7. Publishes platform packages first and the root package last with SLSA provenance, creates the GitHub release, and uploads all seven native binaries.
 8. Uploads `SHA256SUMS` in a separate idempotent finalization job, then verifies npm metadata, dist-tags, provenance, and GitHub assets.
 
 A green build or publish job alone is not a release; the final `Finalize and verify published release` job must pass. New npm package documents can lag version metadata, so the verifier retries retriable registry responses for up to ten minutes.
 
 ## npm authentication
 
-Releases publish through npm trusted publishing (OIDC). Every `npm publish` in the publish job, including the platform publishes started by `napi prepublish`, exchanges the job's GitHub OIDC token for a short-lived token scoped to that one package. Each of the seven packages therefore needs its own trusted publisher with exactly these fields, which are case-sensitive:
+Releases publish through npm trusted publishing (OIDC). Every `npm publish` in the publish job, including the platform publishes started by `napi prepublish`, exchanges the job's GitHub OIDC token for a short-lived token scoped to that one package. Each of the eight packages therefore needs its own trusted publisher with exactly these fields, which are case-sensitive:
 
 - provider: GitHub Actions
 - repository: `NazarKalytiuk/napi_rust_xlsxreader`
@@ -99,14 +100,37 @@ Releases publish through npm trusted publishing (OIDC). Every `npm publish` in t
 Configure them from a terminal signed in with `npm login`. npm asks for a 2FA confirmation per package and rejects the change with E401 without an interactive login:
 
 ```bash
-for suffix in "" -darwin-universal -win32-x64-msvc -win32-arm64-msvc -linux-x64-gnu -linux-arm64-gnu -linux-x64-musl; do
+for suffix in "" -darwin-universal -win32-x64-msvc -win32-arm64-msvc -linux-x64-gnu -linux-arm64-gnu -linux-x64-musl -linux-arm64-musl; do
   npm trust github "@nazarkalytiuk/rusc-xlsx-reader$suffix" \
     --repo NazarKalytiuk/napi_rust_xlsxreader --file release.yml --env npm \
     --allow-publish --yes
 done
 ```
 
-Check each package with `npm trust list <package>`. npm does not validate a configuration when it is saved, only when a publish uses it, and a new configuration expires if no publish uses it within two days. Create configurations shortly before the release that first needs them. Adding a NAPI target adds a platform package, which needs its trusted publisher before the release tag is pushed; otherwise the publish fails partway through and leaves a partial release.
+Check each package with `npm trust list <package>`. npm does not validate a configuration when it is saved, only when a publish uses it, and a new configuration expires if no publish uses it within two days. Create configurations shortly before the release that first needs them.
+
+### Adding a platform package
+
+Adding a NAPI target adds a platform package, and trusted publishing cannot create a package that does not exist on npm yet. The release preflight therefore rejects a release while any package is missing, before anything is built; without that check the publish would fail partway through and leave a partial release. Before tagging the first release that includes the target:
+
+1. From a terminal signed in with `npm login`, publish a placeholder `0.0.0` of the new package. It has no binary, and the root package never depends on it because the root pins exact versions:
+
+   ```bash
+   suffix=linux-arm64-musl # the new package's suffix
+   mkdir "placeholder-$suffix" && cd "placeholder-$suffix"
+   cat > package.json <<JSON
+   {
+     "name": "@nazarkalytiuk/rusc-xlsx-reader-$suffix",
+     "version": "0.0.0",
+     "description": "Placeholder that reserves the package for trusted publishing; releases publish the native binding.",
+     "license": "MIT",
+     "repository": { "type": "git", "url": "git+https://github.com/NazarKalytiuk/napi_rust_xlsxreader.git" }
+   }
+   JSON
+   npm publish --access public
+   ```
+
+2. Configure its trusted publisher with the loop above, and push the release tag within two days.
 
 Once a release has published through trusted publishing, restrict token publishing on every package: **Settings → Publishing access → Require two-factor authentication and disallow tokens**, or `npm access set mfa=publish <package>` from a 2FA login. Trusted publishing does not use traditional tokens, so it keeps working.
 
@@ -114,7 +138,7 @@ Once a release has published through trusted publishing, restrict token publishi
 
 Do not create a new version immediately and do not rebuild different binaries under a partially published version.
 
-1. Inspect the failed workflow and npm metadata for the root plus all six platform packages.
+1. Inspect the failed workflow and npm metadata for the root plus all seven platform packages.
 2. If the publish job failed before all packages exist and its build artifacts are still retained, use GitHub's **Re-run failed jobs** so the same artifacts are reused. An authentication error on a package (E401, E404, or ENEEDAUTH) means its trusted publisher is missing, expired, or does not match: fix it as described in [npm authentication](#npm-authentication) before re-running.
 3. If publishing succeeded but `Finalize and verify published release` failed, wait for npm registry propagation and re-run failed jobs. The finalization job never republishes an immutable package version.
 4. Do not use a fresh manual workflow dispatch after any platform package has published; that would rebuild artifacts for an immutable npm version.
