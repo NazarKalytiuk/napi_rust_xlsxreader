@@ -106,6 +106,20 @@ test('reports every Excel error code as a tagged value', async () => {
   ])
 })
 
+test('reports Excel 365 errors saved by Excel by their cached #VALUE! code', async () => {
+  // Excel caches #VALUE! for #SPILL! and #CALC! and keeps the real code in
+  // rich-value metadata, which calamine does not read yet
+  // (https://github.com/tafia/calamine/issues/754). Once it does, these cells
+  // must report '#SPILL!' and '#CALC!'.
+  const source = fixtures.createRichValueErrorPackage()
+  const value = { type: 'error', code: '#VALUE!' }
+
+  assert.deepEqual(await readCells(source, 'Excel', { formulaMode: 'both' }), [
+    [{ type: 'formula', formula: '=_xlfn.SEQUENCE(1,2)', value }, 'blocker'],
+    [{ type: 'formula', formula: '=_xlfn.LAMBDA(_xlpm.x,_xlpm.x)', value }, null],
+  ])
+})
+
 test('formula modes leave plain cells untouched and keep uncached formulas empty', async () => {
   assert.deepEqual(await readCells(primary, 'Data', { range: 'A2:F2', formulaMode: 'formula' }), [
     [

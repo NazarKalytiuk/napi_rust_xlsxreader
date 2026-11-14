@@ -321,8 +321,9 @@ function createMissingWorkbookPartPackage() {
 }
 
 /**
- * Error values written by Excel 365 (dynamic arrays, LAMBDA) that calamine
- * cannot decode yet: https://github.com/tafia/calamine/issues/754
+ * An Excel 365 error code stored literally in `<v>`, as some writers other
+ * than Excel do. calamine cannot decode these codes yet:
+ * https://github.com/tafia/calamine/issues/754
  */
 function createModernErrorPackage() {
   return createWorkbookPackage({
@@ -339,6 +340,69 @@ function createModernErrorPackage() {
       {
         name: 'Data',
         body: '<dimension ref="A1"/>' + sheetData('<row r="1"><c r="A1"><v>2</v></c></row>'),
+      },
+    ],
+  })
+}
+
+const RICH_DATA_NS = 'http://schemas.microsoft.com/office/spreadsheetml/2017/richdata'
+const RICH_DATA_RELATIONSHIP_NS = 'http://schemas.microsoft.com/office/2017/06/relationships'
+
+/**
+ * Excel 365 errors as Excel itself saves them, modeled on a workbook saved by
+ * Excel 365 for Mac: the cell caches `#VALUE!`, and its `vm` attribute points
+ * through `xl/metadata.xml` to a rich value holding the real error type (8 is
+ * `#SPILL!`, 13 is `#CALC!`).
+ */
+function createRichValueErrorPackage() {
+  const richValueBlock = (index) =>
+    '<bk><extLst><ext uri="{3e2802c4-a4d2-4d8b-9148-e3be6c30e623}">' +
+    `<xlrd:rvb i="${index}"/></ext></extLst></bk>`
+
+  return createWorkbookPackage({
+    sheets: [
+      {
+        name: 'Excel',
+        body:
+          '<dimension ref="A1:B2"/>' +
+          sheetData(
+            '<row r="1"><c r="A1" t="e" vm="1"><f t="array" ref="A1">_xlfn.SEQUENCE(1,2)</f><v>#VALUE!</v></c>' +
+              '<c r="B1" t="inlineStr"><is><t>blocker</t></is></c></row>' +
+              '<row r="2"><c r="A2" t="e" vm="2"><f>_xlfn.LAMBDA(_xlpm.x,_xlpm.x)</f><v>#VALUE!</v></c></row>'
+          ),
+      },
+    ],
+    parts: [
+      {
+        path: 'metadata.xml',
+        type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/sheetMetadata',
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml',
+        xml:
+          '<metadata xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+          `xmlns:xlrd="${RICH_DATA_NS}">` +
+          '<metadataTypes count="1"><metadataType name="XLRICHVALUE" minSupportedVersion="120000" ' +
+          'copy="1" pasteAll="1" pasteValues="1" merge="1" splitFirst="1" rowColShift="1" ' +
+          'clearFormats="1" clearComments="1" assign="1" coerce="1"/></metadataTypes>' +
+          `<futureMetadata name="XLRICHVALUE" count="2">${richValueBlock(0)}${richValueBlock(1)}</futureMetadata>` +
+          '<valueMetadata count="2"><bk><rc t="1" v="0"/></bk><bk><rc t="1" v="1"/></bk></valueMetadata>' +
+          '</metadata>',
+      },
+      {
+        path: 'richData/rdrichvalue.xml',
+        type: `${RICH_DATA_RELATIONSHIP_NS}/rdRichValue`,
+        contentType: 'application/vnd.ms-excel.rdrichvalue+xml',
+        xml:
+          `<rvData xmlns="${RICH_DATA_NS}" count="2">` +
+          '<rv s="0"><v>1</v><v>8</v><v>0</v><v>1</v></rv><rv s="1"><v>13</v><v>24</v></rv></rvData>',
+      },
+      {
+        path: 'richData/rdrichvaluestructure.xml',
+        type: `${RICH_DATA_RELATIONSHIP_NS}/rdRichValueStructure`,
+        contentType: 'application/vnd.ms-excel.rdrichvaluestructure+xml',
+        xml:
+          `<rvStructures xmlns="${RICH_DATA_NS}" count="2">` +
+          '<s t="_error"><k n="colOffset" t="i"/><k n="errorType" t="i"/><k n="rwOffset" t="i"/><k n="subType" t="i"/></s>' +
+          '<s t="_error"><k n="errorType" t="i"/><k n="subType" t="i"/></s></rvStructures>',
       },
     ],
   })
@@ -364,6 +428,7 @@ module.exports = {
   createNumberedWorkbook,
   createPrimaryWorkbook,
   createRecordsWorkbook,
+  createRichValueErrorPackage,
   createSheetKindsPackage,
   createSheetlessPackage,
   createValuesWorkbook,

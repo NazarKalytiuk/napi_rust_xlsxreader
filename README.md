@@ -175,7 +175,12 @@ This package intentionally focuses on fast data extraction. It does not currentl
 
 Accepted ranges use inclusive A1 notation such as `A1` or `A1:F1000`. Sheet-qualified, whole-row, and whole-column range syntax is not accepted.
 
-Cached error values cover the classic Excel codes (`#DIV/0!`, `#N/A`, `#NAME?`, `#NULL!`, `#NUM!`, `#REF!`, `#VALUE!`). Codes introduced by Excel 365, such as `#SPILL!` and `#CALC!`, cannot be decoded yet: reading a worksheet that contains one rejects with `PARSE_ERROR`, while opening the workbook and reading its other worksheets still work. Support depends on [calamine#754](https://github.com/tafia/calamine/issues/754).
+Cached error values cover the classic Excel codes (`#DIV/0!`, `#N/A`, `#NAME?`, `#NULL!`, `#NUM!`, `#REF!`, `#VALUE!`). Error codes introduced by Excel 365, such as `#SPILL!` and `#CALC!`, are not reported yet:
+
+- Excel itself caches these errors as `#VALUE!` and keeps the real code in rich-value metadata, so cells in workbooks saved by Excel read as `{ type: 'error', code: '#VALUE!' }`.
+- Some other writers store the code itself in the cell. Reading a worksheet that contains such a cell rejects with `PARSE_ERROR`. Opening the workbook and reading its other worksheets still work.
+
+Both depend on [calamine#754](https://github.com/tafia/calamine/issues/754).
 
 ## Benchmark
 
