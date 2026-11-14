@@ -10,11 +10,10 @@ This package publishes one root npm package and six platform packages through `.
    - URL: `https://github.com/NazarKalytiuk/napi_rust_xlsxreader`
 2. Push this repository and make `main` the default protected branch.
 3. In GitHub, create an environment named `npm`. Add required reviewers if releases should require manual approval.
-4. Create an npm granular automation token that can publish public packages under `@nazarkalytiuk`. The first release needs token access because the root and platform packages do not exist yet.
-5. Store that token as the `NPM_TOKEN` secret in the GitHub `npm` environment. Never commit an npm token or write it to workflow logs.
-6. Enable GitHub Actions for the repository. The release matrix uses GitHub-hosted x64 and ARM64 runners.
+4. Configure npm trusted publishing for the root and all six platform packages, as described in [npm authentication](#npm-authentication).
+5. Enable GitHub Actions for the repository. The release matrix uses GitHub-hosted x64 and ARM64 runners.
 
-The release job has `id-token: write` for npm provenance and `contents: write` for the GitHub release. No additional GitHub token is required; Actions supplies `GITHUB_TOKEN`.
+The release job has `id-token: write` for npm trusted publishing and provenance, and `contents: write` for the GitHub release. It needs no repository or environment secrets: npm credentials come from OIDC, and Actions supplies `GITHUB_TOKEN`.
 
 ## Published package set
 
@@ -87,25 +86,36 @@ The workflow performs these steps before publishing the root package:
 
 A green build or publish job alone is not a release; the final `Finalize and verify published release` job must pass. New npm package documents can lag version metadata, so the verifier retries retriable registry responses for up to ten minutes.
 
-## Trusted publishing after the first release
+## npm authentication
 
-After all seven npm packages exist, each package can be configured with the same npm trusted publisher:
+Releases publish through npm trusted publishing (OIDC). Every `npm publish` in the publish job, including the platform publishes started by `napi prepublish`, exchanges the job's GitHub OIDC token for a short-lived token scoped to that one package. Each of the seven packages therefore needs its own trusted publisher with exactly these fields, which are case-sensitive:
 
 - provider: GitHub Actions
-- owner: `NazarKalytiuk`
-- repository: `napi_rust_xlsxreader`
+- repository: `NazarKalytiuk/napi_rust_xlsxreader`
 - workflow filename: `release.yml`
 - environment: `npm`
-- allowed action: `npm publish`
+- permission: publish
 
-Configure the root and all six platform packages before removing `NPM_TOKEN`. Test one release end to end before deleting the token secret.
+Configure them from a terminal signed in with `npm login`. npm asks for a 2FA confirmation per package and rejects the change with E401 without an interactive login:
+
+```bash
+for suffix in "" -darwin-universal -win32-x64-msvc -win32-arm64-msvc -linux-x64-gnu -linux-arm64-gnu -linux-x64-musl; do
+  npm trust github "@nazarkalytiuk/rusc-xlsx-reader$suffix" \
+    --repo NazarKalytiuk/napi_rust_xlsxreader --file release.yml --env npm \
+    --allow-publish --yes
+done
+```
+
+Check each package with `npm trust list <package>`. npm does not validate a configuration when it is saved, only when a publish uses it, and a new configuration expires if no publish uses it within two days. Create configurations shortly before the release that first needs them. Adding a NAPI target adds a platform package, which needs its trusted publisher before the release tag is pushed; otherwise the publish fails partway through and leaves a partial release.
+
+Once a release has published through trusted publishing, restrict token publishing on every package: **Settings → Publishing access → Require two-factor authentication and disallow tokens**, or `npm access set mfa=publish <package>` from a 2FA login. Trusted publishing does not use traditional tokens, so it keeps working.
 
 ## Partial failure recovery
 
 Do not create a new version immediately and do not rebuild different binaries under a partially published version.
 
 1. Inspect the failed workflow and npm metadata for the root plus all six platform packages.
-2. If the publish job failed before all packages exist and its build artifacts are still retained, use GitHub's **Re-run failed jobs** so the same artifacts are reused.
+2. If the publish job failed before all packages exist and its build artifacts are still retained, use GitHub's **Re-run failed jobs** so the same artifacts are reused. An authentication error on a package (E401, E404, or ENEEDAUTH) means its trusted publisher is missing, expired, or does not match: fix it as described in [npm authentication](#npm-authentication) before re-running.
 3. If publishing succeeded but `Finalize and verify published release` failed, wait for npm registry propagation and re-run failed jobs. The finalization job never republishes an immutable package version.
 4. Do not use a fresh manual workflow dispatch after any platform package has published; that would rebuild artifacts for an immutable npm version.
 5. If every platform package exists and only the root failed, follow the NAPI-RS partial-release procedure and publish the unchanged root tarball with lifecycle scripts disabled.
