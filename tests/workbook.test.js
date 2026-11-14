@@ -145,9 +145,10 @@ test('opens workbooks whose cells hold values the backend cannot decode', async 
 })
 
 test('rejects workbooks that contain an Excel 4.0 macro sheet', async () => {
-  // calamine does not recognize the macro sheet relationship yet, so the
-  // whole workbook fails to open. Once it does, this workbook must open and
-  // list the sheet with type 'macro'.
+  // calamine does not recognize the macro sheet relationship yet
+  // (https://github.com/tafia/calamine/issues/802), so the whole workbook
+  // fails to open. Once it does, this workbook must open and list the sheet
+  // with type 'macro'.
   await assert.rejects(
     () => openWorkbook(fixtures.createMacroSheetPackage()),
     readerError('PARSE_ERROR', /Unrecognized sheet:type: xl\/macrosheets\/sheet2\.xml/)
