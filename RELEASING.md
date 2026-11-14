@@ -111,7 +111,7 @@ Check each package with `npm trust list <package>`. npm does not validate a conf
 
 ### Adding a platform package
 
-Adding a NAPI target adds a platform package, and trusted publishing cannot create a package that does not exist on npm yet. The release preflight therefore rejects a release while any package is missing, before anything is built; without that check the publish would fail partway through and leave a partial release. Before tagging the first release that includes the target:
+Adding a NAPI target adds a platform package. npm configures trusted publishers only for packages that already exist, and `npm trust github` fails for a new name, so trusted publishing cannot publish its first version. The release preflight therefore rejects a release while any package is missing, before anything is built; without that check the publish would fail partway through and leave a partial release. Before tagging the first release that includes the target:
 
 1. From a terminal signed in with `npm login`, publish a placeholder `0.0.0` of the new package. It has no binary, and the root package never depends on it because the root pins exact versions:
 
