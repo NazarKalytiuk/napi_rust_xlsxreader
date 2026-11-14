@@ -2,7 +2,8 @@
 
 // Builds minimal OOXML packages for edge cases the fixture writer cannot
 // produce: chart and dialog sheets, very hidden sheets, the 1904 date system,
-// ISO `t="d"` cells, hyperlink tooltips, and mismatched declared dimensions.
+// ISO `t="d"` cells, hyperlink tooltips, mismatched declared dimensions, and
+// workbook parts such as Excel's rich-value metadata.
 
 const { crc32 } = require('node:zlib')
 
@@ -31,9 +32,13 @@ const SHEET_KINDS = {
  *   missing from the archive.
  * @param {boolean} [definition.date1904]
  * @param {string} [definition.styles] XML inside `<styleSheet>`.
+ * @param {Array<{ path: string, type: string, contentType: string, xml: string }>} [definition.parts]
+ *   Further workbook-level parts, each related from the workbook with
+ *   relationship `type`. `path` is relative to `xl/`, and `xml` is the part's
+ *   complete root element.
  * @returns {Buffer}
  */
-function createWorkbookPackage({ sheets, date1904 = false, styles }) {
+function createWorkbookPackage({ sheets, date1904 = false, styles, parts = [] }) {
   const files = []
   const contentTypes = []
   const workbookRelationships = []
@@ -77,6 +82,13 @@ function createWorkbookPackage({ sheets, date1904 = false, styles }) {
     files.push(['xl/styles.xml', xml(`<styleSheet xmlns="${MAIN_NS}">${styles}</styleSheet>`)])
     contentTypes.push(override('/xl/styles.xml', `${SPREADSHEET_CONTENT_TYPE}.styles+xml`))
     workbookRelationships.push(relationship(relationshipId, `${RELATIONSHIP_NS}/styles`, 'styles.xml'))
+  }
+
+  for (const part of parts) {
+    const relationshipId = `rId${workbookRelationships.length + 1}`
+    files.push([`xl/${part.path}`, xml(part.xml)])
+    contentTypes.push(override(`/xl/${part.path}`, part.contentType))
+    workbookRelationships.push(relationship(relationshipId, part.type, part.path))
   }
 
   const workbookProperties = date1904 ? '<workbookPr date1904="1"/>' : '<workbookPr/>'
