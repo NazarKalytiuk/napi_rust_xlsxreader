@@ -140,8 +140,9 @@ async function main() {
   }
 
   if (checkRegistry && errors.length === 0) {
-    // Trusted publishing can only publish packages that already exist on npm
-    // with a trusted publisher, and published versions are immutable. Checking
+    // npm configures trusted publishers only for packages that already exist,
+    // so trusted publishing cannot publish a package's first version, and
+    // published versions are immutable. Checking
     // every package before anything is built keeps a release from failing
     // partway through publishing and leaving a partial release behind.
     for (const name of [packageJson.name, ...targets.map((target) => target.packageName)]) {
