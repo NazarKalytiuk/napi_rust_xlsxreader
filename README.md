@@ -182,6 +182,8 @@ Cached error values cover the classic Excel codes (`#DIV/0!`, `#N/A`, `#NAME?`, 
 
 Both depend on [calamine#754](https://github.com/tafia/calamine/issues/754).
 
+Workbooks that contain an Excel 4.0 macro sheet, a legacy sheet type found in some `.xlsm` files, cannot be opened yet: `openWorkbook()` rejects with `PARSE_ERROR` because calamine does not recognize that sheet type.
+
 ## Benchmark
 
 Reference workload: 200,000 rows by 20 columns, split evenly between strings and numbers. Median of three isolated release-mode runs on an Apple M4 Max:

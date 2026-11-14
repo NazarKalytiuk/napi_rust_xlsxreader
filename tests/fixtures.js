@@ -345,6 +345,28 @@ function createModernErrorPackage() {
   })
 }
 
+/** A worksheet next to an Excel 4.0 macro sheet, as found in `.xlsm` files. */
+function createMacroSheetPackage() {
+  return createWorkbookPackage({
+    sheets: [
+      {
+        name: 'Data',
+        body: '<dimension ref="A1"/>' + sheetData('<row r="1"><c r="A1"><v>1</v></c></row>'),
+      },
+      {
+        name: 'Macro1',
+        kind: 'macrosheet',
+        body:
+          '<dimension ref="A1:A2"/>' +
+          sheetData(
+            '<row r="1"><c r="A1" t="b"><f>ECHO(FALSE)</f><v>1</v></c></row>' +
+              '<row r="2"><c r="A2" t="b"><f>RETURN()</f><v>1</v></c></row>'
+          ),
+      },
+    ],
+  })
+}
+
 const RICH_DATA_NS = 'http://schemas.microsoft.com/office/spreadsheetml/2017/richdata'
 const RICH_DATA_RELATIONSHIP_NS = 'http://schemas.microsoft.com/office/2017/06/relationships'
 
@@ -421,6 +443,7 @@ module.exports = {
   createCellEdgesPackage,
   createEncryptedContainer,
   createFixtures,
+  createMacroSheetPackage,
   createMalformedReferencePackage,
   createMissingSheetPartPackage,
   createMissingWorkbookPartPackage,

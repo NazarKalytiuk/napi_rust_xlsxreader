@@ -13,17 +13,37 @@ const PACKAGE_RELATIONSHIP_NS = 'http://schemas.openxmlformats.org/package/2006/
 const CONTENT_TYPES_NS = 'http://schemas.openxmlformats.org/package/2006/content-types'
 const SPREADSHEET_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml'
 
+// How each sheet kind is stored: its folder, root element, content type, and
+// the relationship type that links it from the workbook. Excel 4.0 macro
+// sheets come from Microsoft's extensions rather than ECMA-376.
 const SHEET_KINDS = {
-  worksheet: { folder: 'worksheets' },
-  chartsheet: { folder: 'chartsheets' },
-  dialogsheet: { folder: 'dialogsheets' },
+  worksheet: standardSheetKind('worksheet', 'worksheets'),
+  chartsheet: standardSheetKind('chartsheet', 'chartsheets'),
+  dialogsheet: standardSheetKind('dialogsheet', 'dialogsheets'),
+  macrosheet: {
+    folder: 'macrosheets',
+    root: 'xm:macrosheet',
+    namespaces: ' xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main"',
+    contentType: 'application/vnd.ms-excel.macrosheet+xml',
+    relationshipType: 'http://schemas.microsoft.com/office/2006/relationships/xlMacrosheet',
+  },
+}
+
+function standardSheetKind(kind, folder) {
+  return {
+    folder,
+    root: kind,
+    namespaces: '',
+    contentType: `${SPREADSHEET_CONTENT_TYPE}.${kind}+xml`,
+    relationshipType: `${RELATIONSHIP_NS}/${kind}`,
+  }
 }
 
 /**
  * @param {object} definition
  * @param {Array<{
  *   name: string,
- *   kind?: 'worksheet' | 'chartsheet' | 'dialogsheet',
+ *   kind?: 'worksheet' | 'chartsheet' | 'dialogsheet' | 'macrosheet',
  *   state?: 'visible' | 'hidden' | 'veryHidden',
  *   body?: string,
  *   relationships?: Array<{ id: string, type: string, target: string, external?: boolean }>,
@@ -45,8 +65,7 @@ function createWorkbookPackage({ sheets, date1904 = false, styles, parts = [] })
   const sheetEntries = []
 
   sheets.forEach((sheet, index) => {
-    const kind = sheet.kind ?? 'worksheet'
-    const { folder } = SHEET_KINDS[kind]
+    const { folder, root, namespaces, contentType, relationshipType } = SHEET_KINDS[sheet.kind ?? 'worksheet']
     const number = index + 1
     const relationshipId = `rId${number}`
     const partName = `xl/${folder}/sheet${number}.xml`
@@ -54,11 +73,11 @@ function createWorkbookPackage({ sheets, date1904 = false, styles, parts = [] })
     if (sheet.body !== undefined) {
       files.push([
         partName,
-        xml(`<${kind} xmlns="${MAIN_NS}" xmlns:r="${RELATIONSHIP_NS}">${sheet.body}</${kind}>`),
+        xml(`<${root} xmlns="${MAIN_NS}" xmlns:r="${RELATIONSHIP_NS}"${namespaces}>${sheet.body}</${root}>`),
       ])
-      contentTypes.push(override(`/${partName}`, `${SPREADSHEET_CONTENT_TYPE}.${kind}+xml`))
+      contentTypes.push(override(`/${partName}`, contentType))
     }
-    workbookRelationships.push(relationship(relationshipId, `${RELATIONSHIP_NS}/${kind}`, `${folder}/sheet${number}.xml`))
+    workbookRelationships.push(relationship(relationshipId, relationshipType, `${folder}/sheet${number}.xml`))
 
     if (sheet.relationships?.length) {
       files.push([
