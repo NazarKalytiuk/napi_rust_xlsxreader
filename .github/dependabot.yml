@@ -1,0 +1,43 @@
+version: 2
+
+# Monthly version updates, one grouped pull request per ecosystem for minor
+# and patch releases; major releases get their own pull requests. The
+# cooldown skips releases younger than a week, so a compromised or broken
+# release is usually yanked before it is proposed. Security updates are not
+# subject to the schedule or the cooldown.
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      cargo:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    ignore:
+      # The npm registry copy of SheetJS ends at 0.18.5, which has known
+      # vulnerabilities. The benchmark installs a pinned release from the
+      # SheetJS CDN instead, so registry updates for it must not be proposed.
+      - dependency-name: xlsx
+    groups:
+      npm:
+        update-types: [minor, patch]
+
+  # Workflows reference actions by major tag, so only major updates arise.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ['*']
