@@ -6,6 +6,7 @@ const INTERNAL = Symbol('rusc-xlsx-reader-internal')
 const FORMULA_MODES = new Set(['value', 'formula', 'both'])
 const DATE_MODES = new Set(['object', 'serial', 'iso', 'jsDate'])
 const HEADER_MODES = new Set(['strict', 'dedupe'])
+const DEFAULT_BATCH_SIZE = 4096
 
 class XlsxReaderError extends Error {
   constructor(code, message, options) {
@@ -241,7 +242,7 @@ function normalizeReadOptions(options) {
 
 function normalizeStreamOptions(options) {
   const normalized = normalizeReadOptions(options)
-  const batchSize = options.batchSize ?? 4096
+  const { batchSize = DEFAULT_BATCH_SIZE } = options
   if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 65536) {
     throw new XlsxReaderError(
       'INVALID_OPTION',
@@ -257,8 +258,7 @@ function normalizeStreamOptions(options) {
 
 function normalizeRecordOptions(options, streaming) {
   assertPlainOptions(options)
-  const headerRow = options.headerRow ?? 0
-  const headerMode = options.headerMode ?? 'strict'
+  const { headerRow = 0, headerMode = 'strict' } = options
   if (!Number.isInteger(headerRow) || headerRow < 0) {
     throw new XlsxReaderError('INVALID_OPTION', 'headerRow must be a non-negative integer')
   }

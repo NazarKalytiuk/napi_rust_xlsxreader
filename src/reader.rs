@@ -211,3 +211,59 @@ fn check_cancelled(cancelled: &AtomicBool) -> ReaderResult<()> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_defaults_and_explicit_read_options() {
+        let defaults = ParsedReadOptions::parse(None).unwrap();
+        assert_eq!(defaults.range, None);
+        assert_eq!(defaults.formula_mode, FormulaMode::Value);
+        assert_eq!(defaults.date_mode, DateMode::Object);
+
+        let explicit = ParsedReadOptions::parse(Some(ReadOptions {
+            range: Some("B2:C3".to_owned()),
+            formula_mode: Some("both".to_owned()),
+            date_mode: Some("iso".to_owned()),
+        }))
+        .unwrap();
+        assert_eq!(
+            explicit.range.map(CellRange::to_a1).as_deref(),
+            Some("B2:C3")
+        );
+        assert_eq!(explicit.formula_mode, FormulaMode::Both);
+        assert_eq!(explicit.date_mode, DateMode::Iso);
+    }
+
+    #[test]
+    fn rejects_invalid_read_options_with_stable_codes() {
+        for (options, code) in [
+            (
+                ReadOptions {
+                    range: Some("Sheet1!A1".to_owned()),
+                    ..ReadOptions::default()
+                },
+                "INVALID_RANGE",
+            ),
+            (
+                ReadOptions {
+                    formula_mode: Some("calculate".to_owned()),
+                    ..ReadOptions::default()
+                },
+                "INVALID_OPTION",
+            ),
+            (
+                ReadOptions {
+                    date_mode: Some("calendar".to_owned()),
+                    ..ReadOptions::default()
+                },
+                "INVALID_OPTION",
+            ),
+        ] {
+            let error = ParsedReadOptions::parse(Some(options)).err().unwrap();
+            assert_eq!(error.code, code);
+        }
+    }
+}

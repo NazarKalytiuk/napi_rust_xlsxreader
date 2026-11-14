@@ -197,9 +197,69 @@ mod tests {
     }
 
     #[test]
+    fn trims_surrounding_whitespace() {
+        assert_eq!(CellRange::parse("  a1:b2\t").unwrap().to_a1(), "A1:B2");
+    }
+
+    #[test]
     fn rejects_unsupported_or_reversed_ranges() {
-        for value in ["", "Sheet1!A1", "A:A", "1:2", "B2:A1", "XFE1", "A1048577"] {
-            assert!(CellRange::parse(value).is_err(), "{value} should fail");
+        for value in [
+            "",
+            "   ",
+            "Sheet1!A1",
+            "A:A",
+            "1:2",
+            "B2:A1",
+            "B1:A1",
+            "A2:A1",
+            "XFE1",
+            "A1048577",
+            "A0",
+            "A1:B2:C3",
+            "A1:",
+            ":A1",
+            "1A",
+            "A1B",
+            "A$",
+            "$1",
+            "A-1",
+            "É1",
+            "AAAAAAAA1",
+            "A99999999999",
+        ] {
+            let error = CellRange::parse(value).unwrap_err();
+            assert_eq!(error.code, "INVALID_RANGE", "{value:?} should fail");
         }
+    }
+
+    #[test]
+    fn renders_column_names_across_letter_boundaries() {
+        for (column, name) in [
+            (0, "A"),
+            (25, "Z"),
+            (26, "AA"),
+            (51, "AZ"),
+            (52, "BA"),
+            (701, "ZZ"),
+            (702, "AAA"),
+            (MAX_COLUMNS - 1, "XFD"),
+        ] {
+            assert_eq!(column_name(column), name);
+            assert_eq!(
+                CellRange::parse(&format!("{name}1")).unwrap().start_col,
+                column
+            );
+        }
+    }
+
+    #[test]
+    fn checks_containment_and_width() {
+        let range = CellRange::parse("B2:D4").unwrap();
+        assert_eq!(range.width(), 3);
+        assert!(range.contains(1, 1));
+        assert!(range.contains(3, 3));
+        assert!(!range.contains(0, 1));
+        assert!(!range.contains(1, 4));
+        assert!(!range.contains(4, 3));
     }
 }

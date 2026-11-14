@@ -76,6 +76,7 @@ for await (const record of worksheet.records({
 - `strict` rejects blank or duplicate headers.
 - `dedupe` generates deterministic names such as `column_1`, `name_2`, and `name_3`.
 - Record objects have a null prototype, so headers such as `__proto__` are safe.
+- Record keys follow JavaScript property order, which lists integer-like keys such as `2024` before all others. Use `rows()` or `readRows()` when column order matters.
 
 ## Formulas and dates
 
@@ -173,6 +174,8 @@ CI tests Node.js 22, 24, and 26. Native packages are selected through exact-vers
 This package intentionally focuses on fast data extraction. It does not currently expose styles, rich text, comments, charts, images, conditional formatting, formula calculation, password decryption, or workbook editing.
 
 Accepted ranges use inclusive A1 notation such as `A1` or `A1:F1000`. Sheet-qualified, whole-row, and whole-column range syntax is not accepted.
+
+Cached error values cover the classic Excel codes (`#DIV/0!`, `#N/A`, `#NAME?`, `#NULL!`, `#NUM!`, `#REF!`, `#VALUE!`). Codes introduced by Excel 365, such as `#SPILL!` and `#CALC!`, cannot be decoded yet: reading a worksheet that contains one rejects with `PARSE_ERROR`, while opening the workbook and reading its other worksheets still work. Support depends on [calamine#754](https://github.com/tafia/calamine/issues/754).
 
 ## Benchmark
 

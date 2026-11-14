@@ -265,3 +265,52 @@ fn send_message(
         recv(cancel_receiver) -> _ => Err(ReaderError::aborted()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn batch_size(value: Option<u32>) -> ReaderResult<usize> {
+        ParsedStreamOptions::parse(Some(StreamOptions {
+            batch_size: value,
+            ..StreamOptions::default()
+        }))
+        .map(|options| options.batch_size)
+    }
+
+    #[test]
+    fn defaults_and_bounds_the_batch_size() {
+        assert_eq!(
+            ParsedStreamOptions::parse(None).unwrap().batch_size,
+            DEFAULT_BATCH_SIZE as usize
+        );
+        assert_eq!(batch_size(None).unwrap(), DEFAULT_BATCH_SIZE as usize);
+        assert_eq!(batch_size(Some(1)).unwrap(), 1);
+        assert_eq!(
+            batch_size(Some(MAX_BATCH_SIZE)).unwrap(),
+            MAX_BATCH_SIZE as usize
+        );
+        for value in [0, MAX_BATCH_SIZE + 1] {
+            assert_eq!(batch_size(Some(value)).unwrap_err().code, "INVALID_OPTION");
+        }
+    }
+
+    #[test]
+    fn validates_the_shared_read_options() {
+        let error = ParsedStreamOptions::parse(Some(StreamOptions {
+            range: Some("B2:A1".to_owned()),
+            ..StreamOptions::default()
+        }))
+        .err()
+        .unwrap();
+        assert_eq!(error.code, "INVALID_RANGE");
+
+        let error = ParsedStreamOptions::parse(Some(StreamOptions {
+            date_mode: Some("calendar".to_owned()),
+            ..StreamOptions::default()
+        }))
+        .err()
+        .unwrap();
+        assert_eq!(error.code, "INVALID_OPTION");
+    }
+}
