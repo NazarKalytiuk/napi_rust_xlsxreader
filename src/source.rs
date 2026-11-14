@@ -3,7 +3,7 @@ use std::io::{BufReader, Cursor};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use calamine::{open_workbook, open_workbook_from_rs, Xlsx};
+use calamine::{Xlsx, open_workbook, open_workbook_from_rs};
 use napi::bindgen_prelude::{Buffer, Either};
 
 use crate::error::{ReaderError, ReaderResult};

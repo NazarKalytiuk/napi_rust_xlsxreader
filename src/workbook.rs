@@ -1,6 +1,6 @@
 use std::io::{Read, Seek};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use calamine::{Reader, SheetType, SheetVisible, Xlsx};
 use napi::bindgen_prelude::{AbortSignal, AsyncTask, Buffer, Either, Task};
@@ -9,7 +9,7 @@ use napi_derive::napi;
 
 use crate::error::{ReaderError, ReaderResult};
 use crate::range::CellRange;
-use crate::source::{open_buffer, open_path, PendingSource, WorkbookSource};
+use crate::source::{PendingSource, WorkbookSource, open_buffer, open_path};
 use crate::worksheet::RuscWorksheet;
 
 #[napi(object, object_from_js = false)]

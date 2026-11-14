@@ -68,10 +68,10 @@ async function runSheetJs() {
   const started = performance.now()
   const workbook = XLSX.readFile(filename, { dense: true, cellDates: false })
   sampleMemory(profile === 'memory')
-  const sheet = workbook.Sheets[workbook.SheetNames[0]]
+  const rows = workbook.Sheets[workbook.SheetNames[0]]['!data']
 
   for (let row = 0; row < rowLimit; row += 1) {
-    const denseRow = sheet[row] || []
+    const denseRow = rows[row] || []
     for (let column = 0; column < columns; column += 1) {
       consume(denseRow[column]?.v ?? null)
     }

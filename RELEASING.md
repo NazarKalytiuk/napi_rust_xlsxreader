@@ -71,7 +71,7 @@ The workflow performs these steps before publishing the root package:
 2. Runs Rust formatting, Clippy with warnings denied, Rust tests, and TypeScript checks.
 3. Builds every configured native target.
 4. Combines and tests both slices of the universal macOS binary.
-5. Runs the JavaScript suite on Node.js 22 and 24 for Windows x64/ARM64, Linux glibc x64/ARM64, Linux musl x64, and macOS universal x64/ARM64.
+5. Runs the JavaScript suite on Node.js 22, 24, and 26 for Windows x64/ARM64, Linux glibc x64/ARM64, Linux musl x64, and macOS universal x64/ARM64.
 6. Assembles NAPI platform packages and rejects missing, extra, mismatched, or empty artifacts.
 7. Publishes platform packages first and the root package last with SLSA provenance, creates the GitHub release, and uploads all six native binaries.
 8. Uploads `SHA256SUMS` in a separate idempotent finalization job, then verifies npm metadata, dist-tags, provenance, and GitHub assets.

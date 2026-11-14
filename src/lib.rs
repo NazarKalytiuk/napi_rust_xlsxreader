@@ -9,5 +9,5 @@ mod workbook;
 mod worksheet;
 
 pub use stream::RuscRowCursor;
-pub use workbook::{open_workbook, RuscWorkbook};
+pub use workbook::{RuscWorkbook, open_workbook};
 pub use worksheet::RuscWorksheet;

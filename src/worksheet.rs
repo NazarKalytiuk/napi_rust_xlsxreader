@@ -1,12 +1,12 @@
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use napi::bindgen_prelude::{AbortSignal, AsyncTask, Task};
 use napi::{Env, Result};
 use napi_derive::napi;
 
 use crate::error::ReaderError;
-use crate::reader::{collect_rows, ParsedReadOptions, ReadOptions};
+use crate::reader::{ParsedReadOptions, ReadOptions, collect_rows};
 use crate::source::WorkbookSource;
 use crate::stream::{RuscRowCursor, StreamOptions};
 use crate::structural::StructuralMetadataTask;

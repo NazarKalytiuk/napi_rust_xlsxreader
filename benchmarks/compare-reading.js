@@ -5,7 +5,7 @@ const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 const { Workbook } = require('@nazarkalytiuk/rusc-xlsx')
 const { version: excelJsVersion } = require('exceljs/package.json')
-const { version: sheetJsVersion } = require('xlsx/package.json')
+const { version: sheetJsVersion } = require('xlsx')
 
 const ROWS = 200_000
 const SMALL_ROWS = 20_000
