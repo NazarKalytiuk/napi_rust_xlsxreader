@@ -270,7 +270,348 @@ fn option_string(value: Option<String>) -> Either<String, Null> {
 
 #[cfg(test)]
 mod tests {
+    use calamine::ExcelDateTimeType;
+
     use super::*;
+
+    fn serial_datetime(serial: f64) -> DataRef<'static> {
+        DataRef::DateTime(ExcelDateTime::new(
+            serial,
+            ExcelDateTimeType::DateTime,
+            false,
+        ))
+    }
+
+    fn serial_duration(serial: f64) -> DataRef<'static> {
+        DataRef::DateTime(ExcelDateTime::new(
+            serial,
+            ExcelDateTimeType::TimeDelta,
+            false,
+        ))
+    }
+
+    fn naive(text: &str) -> NaiveDateTime {
+        NaiveDateTime::parse_from_str(text, "%Y-%m-%dT%H:%M:%S%.f").unwrap()
+    }
+
+    fn present<T: Clone>(value: &Either<T, Null>) -> Option<T> {
+        match value {
+            Either::A(value) => Some(value.clone()),
+            Either::B(Null) => None,
+        }
+    }
+
+    fn expect_string(value: BaseCellValue) -> String {
+        match value {
+            BaseCellValue::A(value) => value,
+            other => panic!("expected a string, got {other:?}"),
+        }
+    }
+
+    fn expect_number(value: BaseCellValue) -> f64 {
+        match value {
+            BaseCellValue::B(value) => value,
+            other => panic!("expected a number, got {other:?}"),
+        }
+    }
+
+    fn expect_date(value: BaseCellValue) -> NaiveDateTime {
+        match value {
+            BaseCellValue::D(value) => value,
+            other => panic!("expected a JavaScript date, got {other:?}"),
+        }
+    }
+
+    fn expect_datetime(value: BaseCellValue) -> DateTimeValue {
+        match value {
+            BaseCellValue::E(value) => value,
+            other => panic!("expected a tagged datetime, got {other:?}"),
+        }
+    }
+
+    fn expect_duration(value: BaseCellValue) -> DurationValue {
+        match value {
+            BaseCellValue::F(value) => value,
+            other => panic!("expected a tagged duration, got {other:?}"),
+        }
+    }
+
+    fn expect_error_code(value: BaseCellValue) -> String {
+        match value {
+            BaseCellValue::G(value) => {
+                assert_eq!(value.r#type, "error");
+                value.code
+            }
+            other => panic!("expected an Excel error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_formula_and_date_modes() {
+        assert_eq!(FormulaMode::parse(None).unwrap(), FormulaMode::Value);
+        assert_eq!(
+            FormulaMode::parse(Some("value")).unwrap(),
+            FormulaMode::Value
+        );
+        assert_eq!(
+            FormulaMode::parse(Some("formula")).unwrap(),
+            FormulaMode::Formula
+        );
+        assert_eq!(FormulaMode::parse(Some("both")).unwrap(), FormulaMode::Both);
+
+        assert_eq!(DateMode::parse(None).unwrap(), DateMode::Object);
+        assert_eq!(DateMode::parse(Some("object")).unwrap(), DateMode::Object);
+        assert_eq!(DateMode::parse(Some("serial")).unwrap(), DateMode::Serial);
+        assert_eq!(DateMode::parse(Some("iso")).unwrap(), DateMode::Iso);
+        assert_eq!(DateMode::parse(Some("jsDate")).unwrap(), DateMode::JsDate);
+    }
+
+    #[test]
+    fn rejects_unknown_modes_case_sensitively() {
+        for value in ["calculate", "Value", ""] {
+            assert_eq!(
+                FormulaMode::parse(Some(value)).unwrap_err().code,
+                "INVALID_OPTION"
+            );
+        }
+        for value in ["calendar", "jsdate", ""] {
+            assert_eq!(
+                DateMode::parse(Some(value)).unwrap_err().code,
+                "INVALID_OPTION"
+            );
+        }
+    }
+
+    #[test]
+    fn converts_scalar_values() {
+        assert_eq!(
+            expect_number(convert_data(DataRef::Int(7), DateMode::Object, 1900)),
+            7.0
+        );
+        assert_eq!(
+            expect_number(convert_data(DataRef::Float(2.5), DateMode::Object, 1900)),
+            2.5
+        );
+        assert_eq!(
+            expect_string(convert_data(
+                DataRef::String("inline".to_owned()),
+                DateMode::Object,
+                1900
+            )),
+            "inline"
+        );
+        assert_eq!(
+            expect_string(convert_data(
+                DataRef::SharedString("shared"),
+                DateMode::Object,
+                1900
+            )),
+            "shared"
+        );
+        assert!(matches!(
+            convert_data(DataRef::Bool(true), DateMode::Object, 1900),
+            BaseCellValue::C(true)
+        ));
+        assert!(matches!(
+            convert_data(DataRef::Empty, DateMode::Object, 1900),
+            BaseCellValue::H(Null)
+        ));
+    }
+
+    #[test]
+    fn converts_every_excel_error_code() {
+        for (error, code) in [
+            (CellErrorType::Div0, "#DIV/0!"),
+            (CellErrorType::NA, "#N/A"),
+            (CellErrorType::Name, "#NAME?"),
+            (CellErrorType::Null, "#NULL!"),
+            (CellErrorType::Num, "#NUM!"),
+            (CellErrorType::Ref, "#REF!"),
+            (CellErrorType::Value, "#VALUE!"),
+            (CellErrorType::GettingData, "#DATA!"),
+        ] {
+            let value = convert_data(DataRef::Error(error), DateMode::Object, 1900);
+            assert_eq!(expect_error_code(value), code);
+        }
+    }
+
+    #[test]
+    fn converts_serial_datetimes_per_date_mode() {
+        let serial = 46_238.520_833_333_336;
+
+        let tagged = expect_datetime(convert_data(
+            serial_datetime(serial),
+            DateMode::Object,
+            1900,
+        ));
+        assert_eq!(tagged.r#type, "datetime");
+        assert_eq!(present(&tagged.serial), Some(serial));
+        assert_eq!(
+            present(&tagged.iso).as_deref(),
+            Some("2026-08-04T12:30:00.000")
+        );
+        assert_eq!(present(&tagged.epoch), Some(1900));
+
+        assert_eq!(
+            expect_number(convert_data(
+                serial_datetime(serial),
+                DateMode::Serial,
+                1900
+            )),
+            serial
+        );
+        assert_eq!(
+            expect_string(convert_data(serial_datetime(serial), DateMode::Iso, 1900)),
+            "2026-08-04T12:30:00.000"
+        );
+        assert_eq!(
+            expect_date(convert_data(
+                serial_datetime(serial),
+                DateMode::JsDate,
+                1900
+            )),
+            naive("2026-08-04T12:30:00")
+        );
+    }
+
+    #[test]
+    fn honors_the_1904_date_system() {
+        let value = DataRef::DateTime(ExcelDateTime::new(
+            44_776.0,
+            ExcelDateTimeType::DateTime,
+            true,
+        ));
+        let tagged = expect_datetime(convert_data(value, DateMode::Object, 1904));
+        assert_eq!(
+            present(&tagged.iso).as_deref(),
+            Some("2026-08-04T00:00:00.000")
+        );
+        assert_eq!(present(&tagged.epoch), Some(1904));
+    }
+
+    #[test]
+    fn keeps_unrepresentable_serial_datetimes_lossless() {
+        for mode in [DateMode::Object, DateMode::Iso, DateMode::JsDate] {
+            let tagged = expect_datetime(convert_data(serial_datetime(1e10), mode, 1900));
+            assert_eq!(present(&tagged.serial), Some(1e10));
+            assert_eq!(present(&tagged.iso), None);
+            assert_eq!(present(&tagged.epoch), Some(1900));
+        }
+        assert_eq!(
+            expect_number(convert_data(serial_datetime(1e10), DateMode::Serial, 1900)),
+            1e10
+        );
+    }
+
+    #[test]
+    fn converts_serial_durations_per_date_mode() {
+        for mode in [DateMode::Object, DateMode::JsDate] {
+            let tagged = expect_duration(convert_data(serial_duration(1.5), mode, 1900));
+            assert_eq!(tagged.r#type, "duration");
+            assert_eq!(present(&tagged.serial), Some(1.5));
+            assert_eq!(present(&tagged.iso).as_deref(), Some("P1DT12H0M0S"));
+        }
+        assert_eq!(
+            expect_number(convert_data(serial_duration(1.5), DateMode::Serial, 1900)),
+            1.5
+        );
+        assert_eq!(
+            expect_string(convert_data(serial_duration(1.5), DateMode::Iso, 1900)),
+            "P1DT12H0M0S"
+        );
+    }
+
+    #[test]
+    fn converts_iso_datetimes_per_date_mode() {
+        let source = "2026-08-04T12:30:00+02:00";
+        let iso = || DataRef::DateTimeIso(source.to_owned());
+
+        let tagged = expect_datetime(convert_data(iso(), DateMode::Object, 1900));
+        assert_eq!(present(&tagged.serial), None);
+        assert_eq!(present(&tagged.iso).as_deref(), Some(source));
+        assert_eq!(present(&tagged.epoch), None);
+
+        for mode in [DateMode::Serial, DateMode::Iso] {
+            assert_eq!(expect_string(convert_data(iso(), mode, 1900)), source);
+        }
+        assert_eq!(
+            expect_date(convert_data(iso(), DateMode::JsDate, 1900)),
+            naive("2026-08-04T10:30:00")
+        );
+
+        let unparseable = convert_data(
+            DataRef::DateTimeIso("not-a-date".to_owned()),
+            DateMode::JsDate,
+            1900,
+        );
+        assert_eq!(
+            present(&expect_datetime(unparseable).iso).as_deref(),
+            Some("not-a-date")
+        );
+    }
+
+    #[test]
+    fn parses_supported_iso_datetime_layouts() {
+        for (input, expected) in [
+            ("2026-08-04T12:30:00Z", "2026-08-04T12:30:00"),
+            ("2026-08-04T12:30:00-01:00", "2026-08-04T13:30:00"),
+            ("2026-08-04T12:30:00.250", "2026-08-04T12:30:00.250"),
+            ("2026-08-04 12:30:00.250", "2026-08-04T12:30:00.250"),
+            ("2026-08-04T12:30:00", "2026-08-04T12:30:00"),
+            ("2026-08-04 12:30:00", "2026-08-04T12:30:00"),
+            ("2026-08-04", "2026-08-04T00:00:00"),
+        ] {
+            assert_eq!(parse_iso_datetime(input), Some(naive(expected)), "{input}");
+        }
+        for input in ["", "not-a-date", "2026-13-01", "12:30:00"] {
+            assert_eq!(parse_iso_datetime(input), None, "{input}");
+        }
+    }
+
+    #[test]
+    fn converts_iso_durations_per_date_mode() {
+        let duration = || DataRef::DurationIso("PT12H30M".to_owned());
+
+        for mode in [DateMode::Object, DateMode::JsDate] {
+            let tagged = expect_duration(convert_data(duration(), mode, 1900));
+            assert_eq!(present(&tagged.serial), None);
+            assert_eq!(present(&tagged.iso).as_deref(), Some("PT12H30M"));
+        }
+        for mode in [DateMode::Serial, DateMode::Iso] {
+            assert_eq!(
+                expect_string(convert_data(duration(), mode, 1900)),
+                "PT12H30M"
+            );
+        }
+    }
+
+    #[test]
+    fn wraps_formulas_per_formula_mode() {
+        let cached = || BaseCellValue::B(43.0);
+
+        match wrap_formula(cached(), Some("B2*2".to_owned()), FormulaMode::Value) {
+            CellValue::A(value) => assert_eq!(expect_number(value), 43.0),
+            other => panic!("value mode must return the cached value, got {other:?}"),
+        }
+        match wrap_formula(cached(), Some("B2*2".to_owned()), FormulaMode::Formula) {
+            CellValue::A(value) => assert_eq!(expect_string(value), "=B2*2"),
+            other => panic!("formula mode must return formula text, got {other:?}"),
+        }
+        match wrap_formula(cached(), Some("=B2*2".to_owned()), FormulaMode::Both) {
+            CellValue::B(formula) => {
+                assert_eq!(formula.r#type, "formula");
+                assert_eq!(formula.formula, "=B2*2");
+                assert_eq!(expect_number(formula.value), 43.0);
+            }
+            other => panic!("both mode must return a formula object, got {other:?}"),
+        }
+        for mode in [FormulaMode::Formula, FormulaMode::Both] {
+            match wrap_formula(cached(), None, mode) {
+                CellValue::A(value) => assert_eq!(expect_number(value), 43.0),
+                other => panic!("plain cells must stay unwrapped, got {other:?}"),
+            }
+        }
+    }
 
     #[test]
     fn normalizes_formula_prefix() {
@@ -280,10 +621,18 @@ mod tests {
 
     #[test]
     fn formats_durations_stably() {
+        assert_eq!(duration_to_iso(0.0).as_deref(), Some("P0DT0H0M0S"));
         assert_eq!(duration_to_iso(1.5).as_deref(), Some("P1DT12H0M0S"));
         assert_eq!(
             duration_to_iso(-0.000_001).as_deref(),
             Some("-P0DT0H0M0.086S")
         );
+    }
+
+    #[test]
+    fn rejects_unrepresentable_durations() {
+        for serial in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 1e300] {
+            assert_eq!(duration_to_iso(serial), None, "{serial}");
+        }
     }
 }

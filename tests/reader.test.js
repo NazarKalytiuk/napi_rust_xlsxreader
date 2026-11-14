@@ -224,7 +224,18 @@ test('large bulk parsing leaves the event loop responsive', async () => {
 })
 
 test('CommonJS and ESM facades expose the same API', async () => {
+  const commonjs = require('../wrapper.js')
   const esm = await import(pathToFileURL(path.join(__dirname, '..', 'wrapper.mjs')).href)
-  assert.equal(esm.openWorkbook, openWorkbook)
-  assert.equal(esm.default.XlsxReaderError, XlsxReaderError)
+
+  assert.equal(esm.default, commonjs)
+  assert.deepEqual(Object.keys(esm).sort(), ['default', ...Object.keys(commonjs)].sort())
+  for (const name of Object.keys(commonjs)) {
+    assert.equal(esm[name], commonjs[name], name)
+  }
+  assert.deepEqual(Object.keys(commonjs).sort(), [
+    'Workbook',
+    'Worksheet',
+    'XlsxReaderError',
+    'openWorkbook',
+  ])
 })

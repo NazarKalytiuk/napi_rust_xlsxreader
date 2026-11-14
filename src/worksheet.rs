@@ -11,7 +11,7 @@ use crate::source::WorkbookSource;
 use crate::stream::{RuscRowCursor, StreamOptions};
 use crate::structural::StructuralMetadataTask;
 use crate::value::CellValue;
-use crate::workbook::SheetMetadata;
+use crate::workbook::{SheetMetadata, WORKSHEET_TYPE};
 
 pub type Rows = Vec<Vec<CellValue>>;
 
@@ -30,6 +30,22 @@ impl RuscWorksheet {
             epoch,
         }
     }
+
+    /// Every worksheet operation rejects chart, dialog, and other non-cell
+    /// sheets the same way, before any workbook I/O.
+    fn ensure_worksheet(&self) -> Result<()> {
+        if self.metadata.r#type == WORKSHEET_TYPE {
+            return Ok(());
+        }
+        Err(ReaderError::new(
+            "NOT_A_WORKSHEET",
+            format!(
+                "Sheet {:?} is a {} sheet, not a worksheet",
+                self.metadata.name, self.metadata.r#type
+            ),
+        )
+        .into_napi())
+    }
 }
 
 #[napi]
@@ -45,6 +61,7 @@ impl RuscWorksheet {
         options: Option<ReadOptions>,
         signal: Option<AbortSignal>,
     ) -> Result<AsyncTask<ReadRowsTask>> {
+        self.ensure_worksheet()?;
         let options = ParsedReadOptions::parse(options).map_err(ReaderError::into_napi)?;
         let cancelled = Arc::new(AtomicBool::new(false));
         if let Some(signal) = signal.as_ref() {
@@ -66,6 +83,7 @@ impl RuscWorksheet {
 
     #[napi]
     pub fn create_row_cursor(&self, options: Option<StreamOptions>) -> Result<RuscRowCursor> {
+        self.ensure_worksheet()?;
         RuscRowCursor::spawn(
             self.source.clone(),
             self.metadata.name.clone(),
@@ -79,21 +97,22 @@ impl RuscWorksheet {
     pub fn structural_metadata(
         &self,
         signal: Option<AbortSignal>,
-    ) -> AsyncTask<StructuralMetadataTask> {
+    ) -> Result<AsyncTask<StructuralMetadataTask>> {
+        self.ensure_worksheet()?;
         let cancelled = Arc::new(AtomicBool::new(false));
         if let Some(signal) = signal.as_ref() {
             let cancelled = Arc::clone(&cancelled);
             signal.on_abort(move || cancelled.store(true, Ordering::Release));
         }
 
-        AsyncTask::with_optional_signal(
+        Ok(AsyncTask::with_optional_signal(
             StructuralMetadataTask {
                 source: self.source.clone(),
                 sheet_name: self.metadata.name.clone(),
                 cancelled,
             },
             signal,
-        )
+        ))
     }
 }
 
