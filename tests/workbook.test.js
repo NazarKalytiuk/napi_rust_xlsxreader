@@ -144,6 +144,16 @@ test('opens workbooks whose cells hold values the backend cannot decode', async 
   )
 })
 
+test('rejects workbooks that contain an Excel 4.0 macro sheet', async () => {
+  // calamine does not recognize the macro sheet relationship yet, so the
+  // whole workbook fails to open. Once it does, this workbook must open and
+  // list the sheet with type 'macro'.
+  await assert.rejects(
+    () => openWorkbook(fixtures.createMacroSheetPackage()),
+    readerError('PARSE_ERROR', /Unrecognized sheet:type: xl\/macrosheets\/sheet2\.xml/)
+  )
+})
+
 test('rejects sources that are not a non-empty path or a Buffer', async () => {
   for (const source of [undefined, null, 42, {}, [], '']) {
     await assert.rejects(() => openWorkbook(source), readerError('INVALID_SOURCE'), String(source))
