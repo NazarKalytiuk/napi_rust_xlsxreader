@@ -2,13 +2,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use crossbeam_channel::{bounded, select, Receiver, Sender};
+use crossbeam_channel::{Receiver, Sender, bounded, select};
 use napi::bindgen_prelude::{AsyncTask, Either, Null, Task};
 use napi::{Env, Result};
 use napi_derive::napi;
 
 use crate::error::{ReaderError, ReaderResult};
-use crate::reader::{produce_rows, ParsedReadOptions, ReadOptions};
+use crate::reader::{ParsedReadOptions, ReadOptions, produce_rows};
 use crate::source::WorkbookSource;
 use crate::worksheet::Rows;
 

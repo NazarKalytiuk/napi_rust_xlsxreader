@@ -40,7 +40,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
           package-manager-cache: false
 
       - uses: dtolnay/rust-toolchain@stable
@@ -93,7 +93,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
           package-manager-cache: false
 
       - uses: dtolnay/rust-toolchain@stable
@@ -107,7 +107,7 @@ jobs:
       - uses: mlugg/setup-zig@v2
         if: contains(matrix.target, 'musl')
         with:
-          version: 0.14.1
+          version: 0.17.1
 
       - uses: taiki-e/install-action@v2
         if: contains(matrix.target, 'musl')
@@ -139,7 +139,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
           package-manager-cache: false
 
       - run: npm ci
@@ -176,7 +176,7 @@ jobs:
           - aarch64-pc-windows-msvc
           - x86_64-unknown-linux-gnu
           - aarch64-unknown-linux-gnu
-        node: [22, 24]
+        node: [22, 24, 26]
         include:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
@@ -219,7 +219,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [22, 24]
+        node: [22, 24, 26]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -247,7 +247,7 @@ jobs:
       fail-fast: false
       matrix:
         architecture: [x64, arm64]
-        node: [22, 24]
+        node: [22, 24, 26]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -290,7 +290,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
           registry-url: https://registry.npmjs.org/
           package-manager-cache: false
 
@@ -338,7 +338,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
           package-manager-cache: false
 
       - run: npm ci

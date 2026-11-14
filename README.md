@@ -166,7 +166,7 @@ The package ships strict TypeScript declarations for CommonJS and ESM consumers.
 | Linux glibc | x64 and arm64 |
 | Linux musl | x64 |
 
-CI tests Node.js 22 and 24. Native packages are selected through exact-version optional dependencies; installation does not download binaries in a postinstall script.
+CI tests Node.js 22, 24, and 26. Native packages are selected through exact-version optional dependencies; installation does not download binaries in a postinstall script.
 
 ## Scope
 
@@ -180,9 +180,9 @@ Reference workload: 200,000 rows by 20 columns, split evenly between strings and
 
 | Reader | Throughput | Peak JS heap delta |
 | --- | ---: | ---: |
-| `rusc-xlsx-reader` streaming | 5.06M cells/s | 2.1 MB |
-| ExcelJS 4.4 streaming | 1.26M cells/s | 2.2 MB |
-| SheetJS `xlsx` 0.18 dense | 1.14M cells/s | 458.7 MB |
+| `rusc-xlsx-reader` streaming | 4.59M cells/s | 2.1 MB |
+| ExcelJS 4.4 streaming | 1.35M cells/s | 3.9 MB |
+| SheetJS `xlsx` 0.20 dense | 0.87M cells/s | 457.0 MB |
 
 Run the reproducible benchmark locally:
 

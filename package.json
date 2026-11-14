@@ -86,11 +86,11 @@
     "node": "^22.13.0 || >=24.0.0"
   },
   "devDependencies": {
-    "@napi-rs/cli": "^3.8.2",
-    "@nazarkalytiuk/rusc-xlsx": "^1.0.10",
-    "@types/node": "^24.0.0",
+    "@napi-rs/cli": "^3.10.12",
+    "@nazarkalytiuk/rusc-xlsx": "^2.0.0",
+    "@types/node": "^24.19.2",
     "exceljs": "^4.4.0",
-    "typescript": "^6.0.3",
-    "xlsx": "^0.18.5"
+    "typescript": "^7.0.2",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   }
 }

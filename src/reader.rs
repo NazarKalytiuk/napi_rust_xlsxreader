@@ -1,14 +1,14 @@
 use std::io::{Read, Seek};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use calamine::{Dimensions, Xlsx};
 use napi_derive::napi;
 
 use crate::error::{ReaderError, ReaderResult};
-use crate::range::{dimensions_to_a1, CellRange};
-use crate::source::{open_buffer, open_path, WorkbookSource};
-use crate::value::{convert_data, null_cell, wrap_formula, CellValue, DateMode, FormulaMode};
+use crate::range::{CellRange, dimensions_to_a1};
+use crate::source::{WorkbookSource, open_buffer, open_path};
+use crate::value::{CellValue, DateMode, FormulaMode, convert_data, null_cell, wrap_formula};
 
 #[napi(object)]
 #[derive(Clone, Debug, Default)]

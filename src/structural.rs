@@ -1,6 +1,6 @@
 use std::io::{Read, Seek};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use calamine::Xlsx;
 use napi::bindgen_prelude::{Either, Null, Task};
@@ -9,7 +9,7 @@ use napi_derive::napi;
 
 use crate::error::{ReaderError, ReaderResult};
 use crate::range::dimensions_to_a1;
-use crate::source::{open_buffer, open_path, WorkbookSource};
+use crate::source::{WorkbookSource, open_buffer, open_path};
 
 #[napi(object, object_from_js = false)]
 #[derive(Clone, Debug)]
