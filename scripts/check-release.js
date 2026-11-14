@@ -25,6 +25,21 @@ function equalValues(actual, expected) {
   return JSON.stringify(actual) === JSON.stringify(expected)
 }
 
+// Returns the versions published under `name`, null when the package does not
+// exist, or undefined after recording a registry error.
+async function publishedVersions(name) {
+  const response = await fetch(`https://registry.npmjs.org/${encodeURIComponent(name)}`, {
+    headers: { accept: 'application/vnd.npm.install-v1+json' },
+  })
+  if (response.status === 404) return null
+  if (!response.ok) {
+    errors.push(`npm registry preflight for ${name} returned HTTP ${response.status}`)
+    return undefined
+  }
+  const document = await response.json()
+  return new Set(Object.keys(document.versions ?? {}))
+}
+
 async function main() {
   const version = packageJson.version
   const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
@@ -86,7 +101,7 @@ async function main() {
   } catch (error) {
     errors.push(error.message)
   }
-  check(targets.length === 6, `Expected 6 release targets, found ${targets.length}`)
+  check(targets.length === 7, `Expected 7 release targets, found ${targets.length}`)
   check(
     equalValues(packageJson.napi?.darwin?.universal?.targets, [
       'x86_64-apple-darwin',
@@ -125,14 +140,19 @@ async function main() {
   }
 
   if (checkRegistry && errors.length === 0) {
-    const response = await fetch(
-      `https://registry.npmjs.org/${encodeURIComponent(packageJson.name)}/${encodeURIComponent(version)}`,
-      { headers: { accept: 'application/json' } }
-    )
-    if (response.ok) {
-      errors.push(`${packageJson.name}@${version} is already published`)
-    } else if (response.status !== 404) {
-      errors.push(`npm registry preflight returned HTTP ${response.status}`)
+    // Trusted publishing can only publish packages that already exist on npm
+    // with a trusted publisher, and published versions are immutable. Checking
+    // every package before anything is built keeps a release from failing
+    // partway through publishing and leaving a partial release behind.
+    for (const name of [packageJson.name, ...targets.map((target) => target.packageName)]) {
+      const versions = await publishedVersions(name)
+      if (versions === null) {
+        errors.push(
+          `${name} does not exist on npm: publish its first version and configure its trusted publisher (RELEASING.md)`
+        )
+      } else if (versions?.has(version)) {
+        errors.push(`${name}@${version} is already published`)
+      }
     }
   }
 

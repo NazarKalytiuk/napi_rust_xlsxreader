@@ -85,6 +85,9 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
             command: npm run build -- --target x86_64-unknown-linux-musl -x
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-musl
+            command: npm run build -- --target aarch64-unknown-linux-musl -x
 
     steps:
       - uses: actions/checkout@v7
@@ -212,14 +215,24 @@ jobs:
       - run: npm test
 
   test-linux-musl:
-    name: Test x86_64 Linux musl / Node ${{ matrix.node }}
+    name: Test ${{ matrix.target }} / Node ${{ matrix.node }}
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
+        target:
+          - x86_64-unknown-linux-musl
+          - aarch64-unknown-linux-musl
         node: [22, 24, 26]
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            platform: linux/amd64
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+            platform: linux/arm64
     steps:
       - uses: actions/checkout@v7
         with:
@@ -227,12 +240,12 @@ jobs:
 
       - uses: actions/download-artifact@v8
         with:
-          name: binding-x86_64-unknown-linux-musl
+          name: binding-${{ matrix.target }}
           path: .
 
       - name: Test binding in Alpine Linux
         run: >-
-          docker run --rm --platform linux/amd64
+          docker run --rm --platform ${{ matrix.platform }}
           -v "${{ github.workspace }}:/workspace"
           -w /workspace
           node:${{ matrix.node }}-alpine
