@@ -27,6 +27,11 @@ updates:
       # vulnerabilities. The benchmark installs a pinned release from the
       # SheetJS CDN instead, so registry updates for it must not be proposed.
       - dependency-name: xlsx
+      # The type tests compile against the oldest Node.js line that
+      # package.json `engines` supports, so newer majors would let them accept
+      # APIs that line lacks. Raise this major together with `engines`.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
     groups:
       npm:
         update-types: [minor, patch]
