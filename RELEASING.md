@@ -83,9 +83,9 @@ The workflow performs these steps before publishing the root package:
 5. Runs the JavaScript suite on Node.js 22, 24, and 26 for Windows x64/ARM64, Linux glibc x64/ARM64, Linux musl x64/ARM64, and macOS universal x64/ARM64.
 6. Assembles NAPI platform packages and rejects missing, extra, mismatched, or empty artifacts.
 7. Publishes platform packages first and the root package last with SLSA provenance, creates the GitHub release, and uploads all seven native binaries.
-8. Uploads `SHA256SUMS` in a separate idempotent finalization job, then verifies npm metadata, dist-tags, provenance, and GitHub assets.
+8. Uploads `SHA256SUMS` in a separate idempotent finalization job, then verifies npm metadata, dist-tags, and provenance. It also downloads every npm tarball and checks it against its published integrity, and checks that the native binary in each platform tarball and in the GitHub release matches `SHA256SUMS`.
 
-A green build or publish job alone is not a release; the final `Finalize and verify published release` job must pass. New npm package documents can lag version metadata, so the verifier retries retriable registry responses for up to ten minutes.
+A green build or publish job alone is not a release; the final `Finalize and verify published release` job must pass. npm processes publishes asynchronously: a new version document, or its tarball, can answer 404 for several minutes after the publish, and `npm install` silently skips an optional platform package whose tarball it cannot fetch. The verifier therefore retries 404 and server errors for up to ten minutes per request, and passes only once every package is installable.
 
 ## npm authentication
 
@@ -140,7 +140,7 @@ Do not create a new version immediately and do not rebuild different binaries un
 
 1. Inspect the failed workflow and npm metadata for the root plus all seven platform packages.
 2. If the publish job failed before all packages exist and its build artifacts are still retained, use GitHub's **Re-run failed jobs** so the same artifacts are reused. An authentication error on a package (E401, E404, or ENEEDAUTH) means its trusted publisher is missing, expired, or does not match: fix it as described in [npm authentication](#npm-authentication) before re-running.
-3. If publishing succeeded but `Finalize and verify published release` failed, wait for npm registry propagation and re-run failed jobs. The finalization job never republishes an immutable package version.
+3. If publishing succeeded but `Finalize and verify published release` failed with `Unable to read` errors, wait for npm registry propagation and re-run failed jobs. The finalization job never republishes an immutable package version. An integrity or `SHA256SUMS` mismatch is not a propagation delay: the published package differs from the release binaries, so treat that version as broken and deprecate it.
 4. Do not use a fresh manual workflow dispatch after any platform package has published; that would rebuild artifacts for an immutable npm version.
 5. If every platform package exists and only the root failed, follow the NAPI-RS partial-release procedure and publish the unchanged root tarball with lifecycle scripts disabled.
 6. If the root exists with a missing platform package, publish the missing unchanged platform artifact immediately or deprecate the broken root version.
