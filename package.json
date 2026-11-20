@@ -1,6 +1,6 @@
 {
   "name": "@nazarkalytiuk/rusc-xlsx-reader",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Fast, memory-bounded XLSX reader for Node.js powered by Calamine and NAPI-RS",
   "main": "wrapper.js",
   "module": "wrapper.mjs",
