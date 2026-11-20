@@ -37,7 +37,7 @@ jobs:
       - run: npm ci
       - run: npm run release:check
       - run: npm run check
-      - run: node --check scripts/release-targets.js && node --check scripts/check-release.js && node --check scripts/verify-artifacts.js && node --check scripts/verify-published.js
+      - run: node --check scripts/release-targets.js && node --check scripts/check-release.js && node --check scripts/verify-artifacts.js && node --check scripts/verify-published.js && node --check scripts/wasm-package-smoke.mjs
       - run: npm pack --dry-run --ignore-scripts
 
   native:
@@ -67,3 +67,40 @@ jobs:
       - run: npm ci
       - run: npm run build:debug
       - run: npm test
+
+  wasm:
+    name: WebAssembly / Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24, 26]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1-threads
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: wasm-node-${{ matrix.node }}
+
+      - run: npm ci
+      # The browser tests compare every read with the native addon.
+      - run: npm run build:debug
+      - run: npm run build:wasm
+      # The whole suite, against the WebAssembly build in Node.js.
+      - run: npm run test:wasm
+      - if: matrix.node == 26
+        run: npx playwright install --with-deps chromium firefox webkit
+      # The browser entry in Chromium, Firefox and WebKit.
+      - if: matrix.node == 26
+        run: npm run test:browser

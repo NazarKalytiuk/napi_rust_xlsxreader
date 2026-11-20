@@ -18,6 +18,10 @@ async function consume(source: Buffer, path: string): Promise<void> {
   const { signal } = new AbortController()
   const workbook: Workbook = await openWorkbook(source)
   const fromPath: Workbook = await openWorkbook(path, { signal })
+  const fromBytes: Workbook = await openWorkbook(new Uint8Array(source))
+  const fromArrayBuffer: Workbook = await openWorkbook(new ArrayBuffer(8))
+  void fromBytes
+  void fromArrayBuffer
 
   const sheets: readonly SheetMetadata[] = workbook.sheets
   const names: readonly DefinedName[] = fromPath.definedNames

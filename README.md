@@ -4,7 +4,7 @@
 [![npm version](https://img.shields.io/npm/v/@nazarkalytiuk/rusc-xlsx-reader.svg)](https://www.npmjs.com/package/@nazarkalytiuk/rusc-xlsx-reader)
 [![license](https://img.shields.io/npm/l/@nazarkalytiuk/rusc-xlsx-reader.svg)](LICENSE)
 
-Fast, read-only XLSX/XLSM reader for Node.js, powered by [Calamine](https://github.com/tafia/calamine) and NAPI-RS. It is designed for backend imports and ETL workloads that need typed values, asynchronous parsing, and bounded row buffering.
+Fast, read-only XLSX/XLSM reader for Node.js and browsers, powered by [Calamine](https://github.com/tafia/calamine) and NAPI-RS. It is designed for backend imports and ETL workloads that need typed values, asynchronous parsing, and bounded row buffering. In browsers it runs on WebAssembly; see [Browsers](#browsers-webassembly).
 
 ## Installation
 
@@ -35,7 +35,54 @@ const workbook = await openWorkbook(await fs.readFile('report.xlsx'))
 console.log(workbook.sheets)
 ```
 
-`openWorkbook()` accepts a file path or a `Buffer`. A buffer is snapshotted once during open, so later JavaScript mutations cannot change workbook reads.
+`openWorkbook()` accepts a file path or the workbook's bytes: any `Uint8Array`, such as a `Buffer`, or an `ArrayBuffer`. Bytes are snapshotted once during open, so later JavaScript mutations cannot change workbook reads.
+
+## Browsers (WebAssembly)
+
+Bundlers pick a browser build of the same API through the `browser` export condition (Vite, webpack, esbuild and Rollup do). It runs on the WebAssembly package `@nazarkalytiuk/rusc-xlsx-reader-wasm32-wasi`, which npm installs with the library.
+
+```js
+import { openWorkbook } from '@nazarkalytiuk/rusc-xlsx-reader'
+
+const file = document.querySelector('input[type=file]').files[0]
+const workbook = await openWorkbook(await file.arrayBuffer())
+for await (const row of workbook.sheet(0).rows()) {
+  console.log(row)
+}
+```
+
+Parsing and streaming run on WebAssembly threads, which share memory through `SharedArrayBuffer`, so the page must be [cross-origin isolated](https://developer.mozilla.org/docs/Web/API/Window/crossOriginIsolated). Serve it with these headers:
+
+```
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+```
+
+`Cross-Origin-Embedder-Policy: credentialless` also works where the page loads cross-origin resources that do not send CORP headers. Without isolation, `openWorkbook()` rejects with `UNSUPPORTED_ENVIRONMENT`; importing the package is still safe. The WebAssembly module and its worker threads load on the first `openWorkbook()` call, not on import.
+
+With Vite, set the headers for the dev server and `vite preview`, and keep the WebAssembly package out of dependency pre-bundling, because its loader finds the `.wasm` and worker files next to itself:
+
+```js
+// vite.config.js
+const headers = {
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Embedder-Policy': 'require-corp',
+}
+
+export default {
+  server: { headers },
+  preview: { headers },
+  optimizeDeps: { exclude: ['@nazarkalytiuk/rusc-xlsx-reader-wasm32-wasi'] },
+}
+```
+
+Your production server must send the same headers. Other differences from Node.js:
+
+- Browsers have no file system: pass bytes (`File.arrayBuffer()`, `fetch()` responses) instead of a path; a path rejects with `INVALID_SOURCE`.
+- The module loads with top-level await, so the bundle must target browsers that support it (current Chrome, Edge, Firefox and Safari do, and so do Vite's default build targets).
+- It also works in module Web Workers, which keeps parsing off the main thread.
+
+On Node.js the native addon is used. Where no prebuilt binary exists for the platform, Node.js falls back to the same WebAssembly package automatically; set `NAPI_RS_WASI_FLAVOR=wasm32-wasi` to choose it on purpose.
 
 ## Stream large worksheets
 
@@ -137,12 +184,12 @@ try {
 }
 ```
 
-Representative codes include `ABORTED`, `CORRUPT_WORKBOOK`, `ENCRYPTED_WORKBOOK`, `INVALID_RANGE`, `INVALID_HEADER`, `SHEET_NOT_FOUND`, and `SOURCE_NOT_FOUND`.
+Representative codes include `ABORTED`, `CORRUPT_WORKBOOK`, `ENCRYPTED_WORKBOOK`, `INVALID_RANGE`, `INVALID_HEADER`, `SHEET_NOT_FOUND`, `SOURCE_NOT_FOUND`, and, in browser pages that are not cross-origin isolated, `UNSUPPORTED_ENVIRONMENT`.
 
 ## API
 
 ```ts
-openWorkbook(source: string | Buffer, options?): Promise<Workbook>
+openWorkbook(source: string | Uint8Array | ArrayBuffer, options?): Promise<Workbook>
 
 workbook.sheets: readonly SheetMetadata[]
 workbook.definedNames: readonly DefinedName[]
@@ -166,8 +213,9 @@ The package ships strict TypeScript declarations for CommonJS and ESM consumers.
 | Windows | x64 and arm64 MSVC |
 | Linux glibc | x64 and arm64 |
 | Linux musl | x64 and arm64 |
+| WebAssembly (browsers, and Node.js elsewhere) | `wasm32-wasip1-threads` |
 
-CI tests Node.js 22, 24, and 26. Native packages are selected through exact-version optional dependencies; installation does not download binaries in a postinstall script.
+CI tests Node.js 22, 24, and 26, the WebAssembly build on each of them, and the browser build in Chromium, Firefox, and WebKit. Native packages are selected through exact-version optional dependencies; installation does not download binaries in a postinstall script.
 
 ## Scope
 
