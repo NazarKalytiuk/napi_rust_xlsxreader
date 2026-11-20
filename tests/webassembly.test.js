@@ -4,10 +4,9 @@
 // WebAssembly build is loaded: `npm test` runs this file against the native
 // addon and `npm run test:wasm` against the WebAssembly build.
 
-const { after, test } = require('node:test')
+const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
-const os = require('node:os')
 const path = require('node:path')
 
 const { __napiBindingTarget } = require('../index.js')
@@ -16,11 +15,6 @@ const fixtures = require('./fixtures.js')
 const { readerError } = require('./support/assertions.js')
 
 const primary = fixtures.createPrimaryWorkbook()
-const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'rusc-xlsx-reader-wasm-'))
-
-after(() => {
-  fs.rmSync(temporaryDirectory, { recursive: true, force: true })
-})
 
 test('loads the build the test run asks for', () => {
   assert.equal(__napiBindingTarget, process.env.RUSC_XLSX_READER_BINDING ?? 'native')
@@ -28,13 +22,19 @@ test('loads the build the test run asks for', () => {
 
 test('resolves relative paths against the working directory', async () => {
   // WASI resolves relative paths against `/`; the wrapper resolves them first.
-  const absolute = path.join(temporaryDirectory, 'relative.xlsx')
-  fs.writeFileSync(absolute, primary)
-  const relative = path.relative(process.cwd(), absolute)
-  assert.equal(path.isAbsolute(relative), false)
+  // The directory is inside the working directory because the temporary
+  // directory can be on another drive (Windows), with no relative path to it.
+  const directory = fs.mkdtempSync(path.join(process.cwd(), '.rusc-xlsx-reader-relative-'))
+  try {
+    const relative = path.relative(process.cwd(), path.join(directory, 'relative.xlsx'))
+    assert.equal(path.isAbsolute(relative), false)
+    fs.writeFileSync(relative, primary)
 
-  const workbook = await openWorkbook(relative)
-  assert.deepEqual(await workbook.sheet('Hidden').readRows(), [['secret']])
+    const workbook = await openWorkbook(relative)
+    assert.deepEqual(await workbook.sheet('Hidden').readRows(), [['secret']])
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true })
+  }
 })
 
 test('reads workbooks from any Uint8Array or an ArrayBuffer', async () => {
