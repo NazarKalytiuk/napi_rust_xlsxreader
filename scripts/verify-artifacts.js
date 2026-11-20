@@ -55,8 +55,14 @@ for (const target of targets) {
   const targetManifest = JSON.parse(fs.readFileSync(targetManifestPath, 'utf8'))
   check(targetManifest.name === target.packageName, `${target.directory} has package name ${targetManifest.name}`)
   check(targetManifest.version === packageJson.version, `${target.packageName} version must be ${packageJson.version}`)
-  check(targetManifest.main === target.binaryName, `${target.packageName} main must be ${target.binaryName}`)
-  check(equalValues(targetManifest.files, [target.binaryName]), `${target.packageName} files must contain only its binary`)
+  check(targetManifest.main === target.main, `${target.packageName} main must be ${target.main}`)
+  check(
+    equalValues(targetManifest.files, target.files),
+    `${target.packageName} files must be ${target.files.join(', ')}`
+  )
+  for (const filename of target.files) {
+    check(fs.existsSync(path.join(targetDirectory, filename)), `${target.packageName} is missing ${filename}`)
+  }
   check(equalValues(targetManifest.os, target.os), `${target.packageName} has invalid os constraints`)
   check(equalValues(targetManifest.cpu, target.cpu), `${target.packageName} has invalid cpu constraints`)
   check(equalValues(targetManifest.libc, target.libc), `${target.packageName} has invalid libc constraints`)
@@ -72,10 +78,12 @@ for (const target of targets) {
   check(rootHash === packagedHash, `Root and packaged ${target.binaryName} checksums differ`)
   checksums.push(`${packagedHash}  ${target.binaryName}`)
 
-  const nodeFiles = fs.readdirSync(targetDirectory).filter((filename) => filename.endsWith('.node'))
+  const binaries = fs
+    .readdirSync(targetDirectory)
+    .filter((filename) => filename.endsWith('.node') || filename.endsWith('.wasm'))
   check(
-    equalValues(nodeFiles, [target.binaryName]),
-    `${target.packageName} must contain exactly ${target.binaryName}`
+    equalValues(binaries, [target.binaryName]),
+    `${target.packageName} must contain exactly one binary, ${target.binaryName}`
   )
 }
 
@@ -88,5 +96,5 @@ if (errors.length > 0) {
     fs.mkdirSync(path.dirname(output), { recursive: true })
     fs.writeFileSync(output, `${checksums.sort().join('\n')}\n`)
   }
-  console.log(`Verified ${targets.length} native packages for ${packageJson.name}@${packageJson.version}`)
+  console.log(`Verified ${targets.length} platform packages for ${packageJson.name}@${packageJson.version}`)
 }

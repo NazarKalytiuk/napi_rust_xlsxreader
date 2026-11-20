@@ -6,3 +6,12 @@
 .DS_Store
 /tests/.tmp/
 /benchmarks/.tmp/
+/.vitest/
+
+# WebAssembly build (`npm run build:wasm`). The release workflow publishes it
+# in @nazarkalytiuk/rusc-xlsx-reader-wasm32-wasi; browser.js, the browser
+# counterpart of index.js, is committed.
+*.wasm
+/rusc_xlsx_reader.wasi*
+/wasi-worker.mjs
+/wasi-worker-browser.mjs

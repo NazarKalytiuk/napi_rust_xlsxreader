@@ -29,7 +29,25 @@ const TARGETS = new Map([
     'aarch64-unknown-linux-musl',
     { suffix: 'linux-arm64-musl', os: ['linux'], cpu: ['arm64'], libc: ['musl'] },
   ],
+  [
+    // WebAssembly runs inside the host process on any OS and CPU. The package
+    // has no os field, and `napi.wasm.cpu: false` drops cpu, so it installs
+    // everywhere: browser bundlers resolve it by name from browser.js.
+    'wasm32-wasip1-threads',
+    { suffix: 'wasm32-wasi', wasm: true },
+  ],
 ])
+
+// The loader files napi-rs puts next to a threaded WebAssembly binary.
+function wasmLoaderFiles(binaryName) {
+  return [
+    `${binaryName}.wasi.cjs`,
+    `${binaryName}.wasi.d.cts`,
+    `${binaryName}.wasi-browser.js`,
+    'wasi-worker.mjs',
+    'wasi-worker-browser.mjs',
+  ]
+}
 
 function releaseTargets(packageJson) {
   const configured = packageJson.napi?.targets
@@ -51,12 +69,17 @@ function releaseTargets(packageJson) {
       throw new Error(`Release target ${target} has no packaging contract`)
     }
 
+    const binary = `${binaryName}.${metadata.suffix}.${metadata.wasm ? 'wasm' : 'node'}`
     return {
       target,
       ...metadata,
+      wasm: metadata.wasm === true,
       directory: metadata.suffix,
       packageName: `${packageJson.name}-${metadata.suffix}`,
-      binaryName: `${binaryName}.${metadata.suffix}.node`,
+      binaryName: binary,
+      // The file the package's `main` names and every file it publishes.
+      main: metadata.wasm ? `${binaryName}.wasi.cjs` : binary,
+      files: metadata.wasm ? [binary, ...wasmLoaderFiles(binaryName)] : [binary],
     }
   })
 }

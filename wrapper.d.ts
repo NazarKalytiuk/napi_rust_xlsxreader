@@ -1,6 +1,8 @@
-/// <reference types="node" />
-
-export type WorkbookSource = string | Buffer
+/**
+ * A file path (Node.js only) or the workbook's bytes: any Uint8Array, such as a
+ * Buffer, or an ArrayBuffer.
+ */
+export type WorkbookSource = string | Uint8Array | ArrayBuffer
 export type FormulaMode = 'value' | 'formula' | 'both'
 export type DateMode = 'object' | 'serial' | 'iso' | 'jsDate'
 export type HeaderMode = 'strict' | 'dedupe'
@@ -120,6 +122,8 @@ export type XlsxReaderErrorCode =
   | 'SHEET_NOT_FOUND'
   | 'SOURCE_NOT_FOUND'
   | 'STREAM_ERROR'
+  /** A browser page that is not cross-origin isolated; see the README. */
+  | 'UNSUPPORTED_ENVIRONMENT'
 
 export class XlsxReaderError extends Error {
   readonly code: XlsxReaderErrorCode

@@ -8,6 +8,7 @@
   "exports": {
     ".": {
       "types": "./wrapper.d.ts",
+      "browser": "./wrapper.browser.mjs",
       "import": "./wrapper.mjs",
       "require": "./wrapper.js",
       "default": "./wrapper.js"
@@ -34,7 +35,8 @@
       "x86_64-unknown-linux-gnu",
       "aarch64-unknown-linux-gnu",
       "x86_64-unknown-linux-musl",
-      "aarch64-unknown-linux-musl"
+      "aarch64-unknown-linux-musl",
+      "wasm32-wasip1-threads"
     ],
     "darwin": {
       "universal": {
@@ -43,6 +45,9 @@
           "aarch64-apple-darwin"
         ]
       }
+    },
+    "wasm": {
+      "cpu": false
     }
   },
   "scripts": {
@@ -51,12 +56,16 @@
     "benchmark": "node --expose-gc benchmarks/compare-reading.js",
     "build": "napi build --platform --release",
     "build:debug": "napi build --platform",
+    "build:wasm": "napi build --platform --release --target wasm32-wasip1-threads",
     "clean": "cargo clean && rm -rf *.node npm",
     "prepublishOnly": "napi prepublish -t npm",
     "release:check": "node scripts/check-release.js",
     "release:verify-artifacts": "node scripts/verify-artifacts.js",
     "release:verify-published": "node scripts/verify-published.js",
     "test": "node --test tests/*.test.js",
+    "test:wasm": "node --require ./tests/support/wasm-binding.js --test tests/*.test.js",
+    "test:browser": "vitest run --config vitest.browser.config.mjs",
+    "test:wasm-package": "node scripts/wasm-package-smoke.mjs",
     "test:types": "tsc --noEmit -p tests/types/tsconfig.json",
     "universal": "napi universalize",
     "version": "napi version"
@@ -77,8 +86,11 @@
   "files": [
     "index.js",
     "index.d.ts",
+    "browser.js",
+    "reader.js",
     "wrapper.js",
     "wrapper.mjs",
+    "wrapper.browser.mjs",
     "wrapper.d.ts",
     "README.md",
     "LICENSE"
@@ -87,11 +99,19 @@
     "node": "^22.13.0 || >=24.0.0"
   },
   "devDependencies": {
+    "@emnapi/core": "2.0.0-beta.3",
+    "@emnapi/runtime": "2.0.0-beta.3",
     "@napi-rs/cli": "^3.10.12",
+    "@napi-rs/wasm-runtime": "^1.2.7",
     "@nazarkalytiuk/rusc-xlsx": "^2.3.0",
     "@types/node": "^22.20.5",
+    "@vitest/browser-playwright": "^5.1.0",
+    "emnapi": "2.0.0-beta.3",
     "exceljs": "^4.4.0",
+    "playwright": "^1.65.1",
     "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   }
 }

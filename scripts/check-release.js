@@ -77,8 +77,11 @@ async function main() {
   const requiredFiles = [
     'index.js',
     'index.d.ts',
+    'browser.js',
+    'reader.js',
     'wrapper.js',
     'wrapper.mjs',
+    'wrapper.browser.mjs',
     'wrapper.d.ts',
     'README.md',
     'LICENSE',
@@ -94,6 +97,11 @@ async function main() {
   check(packageJson.exports?.['.']?.require === './wrapper.js', 'CommonJS export must point to wrapper.js')
   check(packageJson.exports?.['.']?.import === './wrapper.mjs', 'ESM export must point to wrapper.mjs')
   check(packageJson.exports?.['.']?.types === './wrapper.d.ts', 'types export must point to wrapper.d.ts')
+  check(
+    packageJson.exports?.['.']?.browser === './wrapper.browser.mjs',
+    'browser export must point to wrapper.browser.mjs'
+  )
+  check(packageJson.napi?.wasm?.cpu === false, 'napi.wasm.cpu must be false so the WebAssembly package installs everywhere')
 
   let targets = []
   try {
@@ -101,7 +109,7 @@ async function main() {
   } catch (error) {
     errors.push(error.message)
   }
-  check(targets.length === 7, `Expected 7 release targets, found ${targets.length}`)
+  check(targets.length === 8, `Expected 8 release targets, found ${targets.length}`)
   check(
     equalValues(packageJson.napi?.darwin?.universal?.targets, [
       'x86_64-apple-darwin',

@@ -172,7 +172,7 @@ async function main() {
     checksums = parseChecksums(manifest.toString('utf8'))
     check(
       equalValues([...checksums.keys()].sort(), targets.map((target) => target.binaryName).sort()),
-      'SHA256SUMS must list exactly the native binaries of the release targets'
+      'SHA256SUMS must list exactly the binaries of the release targets'
     )
   }
 
@@ -205,7 +205,7 @@ async function main() {
     )
     check(metadata.name === target.packageName, `${target.packageName} published with the wrong name`)
     check(metadata.version === version, `${target.packageName} published with the wrong version`)
-    check(metadata.main === target.binaryName, `${target.packageName} published with the wrong main file`)
+    check(metadata.main === target.main, `${target.packageName} published with the wrong main file`)
     check(equalValues(metadata.os, target.os), `${target.packageName} published with invalid os constraints`)
     check(equalValues(metadata.cpu, target.cpu), `${target.packageName} published with invalid cpu constraints`)
     check(equalValues(metadata.libc, target.libc), `${target.packageName} published with invalid libc constraints`)
