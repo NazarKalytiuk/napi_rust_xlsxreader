@@ -14,7 +14,6 @@ crate-type = ["cdylib"]
 [dependencies]
 calamine = { version = "0.38.0", features = ["chrono"] }
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }
-crossbeam-channel = "0.5.17"
 napi = { version = "3.16.2", features = ["napi9", "chrono_date"] }
 napi-derive = "3.7.1"
 
