@@ -113,6 +113,27 @@ describe('Browser entry', () => {
     }
   })
 
+  test('closes streams from the main thread while their threads are busy', async () => {
+    // A browser's main thread cannot wait for a lock (Atomics.wait throws
+    // there), so closing or dropping a stream must never wait for its thread.
+    // Batches of one row keep each stream's thread handing rows over while the
+    // streams stop at different points, the last ones at the end.
+    const workbook = await openWorkbook(await fixture('createNumberedWorkbook', 200))
+    for (let round = 0; round < 60; round++) {
+      await Promise.all(
+        Array.from({ length: 12 }, async (_, index) => {
+          const stop = (round * 12 + index) % 202
+          let rows = 0
+          for await (const _row of workbook.sheet(0).rows({ batchSize: 1 })) {
+            rows += 1
+            if (rows === stop) break
+          }
+        })
+      )
+    }
+    expect(await count(workbook.sheet(0).rows())).toEqual({ rows: 201, last: numberedRow(200) })
+  }, 120_000)
+
   test('reads workbooks large enough to grow WebAssembly memory', async () => {
     const rows = 100_000
     const workbook = await openWorkbook(await fixture('createNumberedWorkbook', rows))

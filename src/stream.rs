@@ -1,8 +1,8 @@
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread;
+use std::time::Duration;
 
-use crossbeam_channel::{Receiver, Sender, bounded, select};
 use napi::bindgen_prelude::{AsyncTask, Either, Null, Task};
 use napi::{Env, Result};
 use napi_derive::napi;
@@ -57,14 +57,68 @@ enum StreamMessage {
     End,
 }
 
+/// How often a waiting thread re-checks `Shared::cancelled`; see [`Shared`].
+const CANCEL_POLL: Duration = Duration::from_millis(50);
+
+/// What a cursor's row thread and its `next_batch` and `close` tasks share.
+///
+/// The JavaScript thread never waits for a lock another thread can hold: a
+/// browser's main thread cannot block, and `Atomics.wait` throwing there aborts
+/// the WebAssembly instance. So `state` is locked only by the row thread and by
+/// the tasks, which run on the async-work pool. The JavaScript thread, in
+/// `close()` and when a cursor is garbage collected, only sets `cancelled` and
+/// wakes the waiters, which `Condvar::notify_all` does without the lock.
+/// Because that wake-up can come between a waiter's check of `cancelled` and
+/// its wait, the waits re-check the flag every [`CANCEL_POLL`].
+struct Shared {
+    state: Mutex<State>,
+    changed: Condvar,
+    cancelled: AtomicBool,
+}
+
+#[derive(Default)]
+struct State {
+    /// The message `next_batch` takes next. The row thread waits while it is
+    /// full, so it stays at most one batch ahead of JavaScript.
+    message: Option<StreamMessage>,
+    /// The row thread has returned.
+    worker_done: bool,
+    /// `next_batch` has returned the end, an error, or an abort; later calls
+    /// return null.
+    exhausted: bool,
+}
+
+impl Shared {
+    fn lock(&self) -> Result<MutexGuard<'_, State>> {
+        self.state.lock().map_err(|_| {
+            ReaderError::new("INTERNAL_ERROR", "Row cursor lock was poisoned").into_napi()
+        })
+    }
+
+    fn cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Acquire)
+    }
+
+    /// Safe on the JavaScript thread: it takes no lock.
+    fn cancel(&self) {
+        self.cancelled.store(true, Ordering::Release);
+        self.changed.notify_all();
+    }
+
+    fn wait<'a>(&self, guard: MutexGuard<'a, State>) -> Result<MutexGuard<'a, State>> {
+        match self.changed.wait_timeout(guard, CANCEL_POLL) {
+            Ok((guard, _)) => Ok(guard),
+            Err(_) => {
+                Err(ReaderError::new("INTERNAL_ERROR", "Row cursor lock was poisoned").into_napi())
+            }
+        }
+    }
+}
+
 #[napi]
 pub struct RuscRowCursor {
-    receiver: Receiver<StreamMessage>,
-    cancel_sender: Sender<()>,
-    cancelled: Arc<AtomicBool>,
-    finished: Arc<AtomicBool>,
+    shared: Arc<Shared>,
     next_lock: Arc<Mutex<()>>,
-    completion: Receiver<()>,
 }
 
 impl RuscRowCursor {
@@ -75,48 +129,36 @@ impl RuscRowCursor {
         options: Option<StreamOptions>,
     ) -> ReaderResult<Self> {
         let options = ParsedStreamOptions::parse(options)?;
-        let (sender, receiver) = bounded(1);
-        let (cancel_sender, cancel_receiver) = bounded(1);
-        let (completion_sender, completion) = bounded(1);
-        let cancelled = Arc::new(AtomicBool::new(false));
-        let worker_cancelled = Arc::clone(&cancelled);
+        let shared = Arc::new(Shared {
+            state: Mutex::new(State::default()),
+            changed: Condvar::new(),
+            cancelled: AtomicBool::new(false),
+        });
+        let worker_shared = Arc::clone(&shared);
 
         thread::Builder::new()
             .name(format!("rusc-xlsx-reader-{sheet_name}"))
             .spawn(move || {
-                run_worker(
-                    source,
-                    sheet_name,
-                    epoch,
-                    options,
-                    sender,
-                    cancel_receiver,
-                    worker_cancelled,
-                );
-                let _ = completion_sender.send(());
+                run_worker(source, sheet_name, epoch, options, &worker_shared);
+                // A poisoned lock means a panic, which already ended the stream.
+                if let Ok(mut state) = worker_shared.state.lock() {
+                    state.worker_done = true;
+                }
+                worker_shared.changed.notify_all();
             })
             .map_err(ReaderError::from)?;
 
         Ok(Self {
-            receiver,
-            cancel_sender,
-            cancelled,
-            finished: Arc::new(AtomicBool::new(false)),
+            shared,
             next_lock: Arc::new(Mutex::new(())),
-            completion,
         })
-    }
-
-    fn request_close(&self) {
-        if !self.cancelled.swap(true, Ordering::AcqRel) {
-            let _ = self.cancel_sender.try_send(());
-        }
     }
 }
 
 impl Drop for RuscRowCursor {
     fn drop(&mut self) {
-        self.request_close();
+        // Runs on the JavaScript thread when the cursor is garbage collected.
+        self.shared.cancel();
     }
 }
 
@@ -125,26 +167,22 @@ impl RuscRowCursor {
     #[napi]
     pub fn next_batch(&self) -> AsyncTask<NextBatchTask> {
         AsyncTask::new(NextBatchTask {
-            receiver: self.receiver.clone(),
-            cancelled: Arc::clone(&self.cancelled),
-            finished: Arc::clone(&self.finished),
+            shared: Arc::clone(&self.shared),
             next_lock: Arc::clone(&self.next_lock),
         })
     }
 
     #[napi]
     pub fn close(&self) -> AsyncTask<CloseCursorTask> {
-        self.request_close();
+        self.shared.cancel();
         AsyncTask::new(CloseCursorTask {
-            completion: self.completion.clone(),
+            shared: Arc::clone(&self.shared),
         })
     }
 }
 
 pub struct NextBatchTask {
-    receiver: Receiver<StreamMessage>,
-    cancelled: Arc<AtomicBool>,
-    finished: Arc<AtomicBool>,
+    shared: Arc<Shared>,
     next_lock: Arc<Mutex<()>>,
 }
 
@@ -154,36 +192,44 @@ impl Task for NextBatchTask {
     type JsValue = Either<Rows, Null>;
 
     fn compute(&mut self) -> Result<Self::Output> {
+        // Calls made before an earlier one returned get their batches in order.
         let _guard = self.next_lock.lock().map_err(|_| {
             ReaderError::new("INTERNAL_ERROR", "Row cursor lock was poisoned").into_napi()
         })?;
 
-        if self.finished.load(Ordering::Acquire) {
-            return Ok(Either::B(Null));
-        }
-
-        match self.receiver.recv() {
-            Ok(StreamMessage::Batch(rows)) => Ok(Either::A(rows)),
-            Ok(StreamMessage::Error(error)) => {
-                self.finished.store(true, Ordering::Release);
-                Err(error.into_napi())
+        let shared = &self.shared;
+        let mut state = shared.lock()?;
+        loop {
+            if state.exhausted {
+                return Ok(Either::B(Null));
             }
-            Ok(StreamMessage::End) => {
-                self.finished.store(true, Ordering::Release);
-                Ok(Either::B(Null))
+            if let Some(message) = state.message.take() {
+                shared.changed.notify_all();
+                return match message {
+                    StreamMessage::Batch(rows) => Ok(Either::A(rows)),
+                    StreamMessage::Error(error) => {
+                        state.exhausted = true;
+                        Err(error.into_napi())
+                    }
+                    StreamMessage::End => {
+                        state.exhausted = true;
+                        Ok(Either::B(Null))
+                    }
+                };
             }
-            Err(_) if self.cancelled.load(Ordering::Acquire) => {
-                self.finished.store(true, Ordering::Release);
-                Err(ReaderError::aborted().into_napi())
+            if shared.cancelled() {
+                state.exhausted = true;
+                return Err(ReaderError::aborted().into_napi());
             }
-            Err(_) => {
-                self.finished.store(true, Ordering::Release);
-                Err(ReaderError::new(
+            if state.worker_done {
+                state.exhausted = true;
+                return Err(ReaderError::new(
                     "STREAM_ERROR",
                     "Row worker stopped before signaling completion",
                 )
-                .into_napi())
+                .into_napi());
             }
+            state = shared.wait(state)?;
         }
     }
 
@@ -193,7 +239,7 @@ impl Task for NextBatchTask {
 }
 
 pub struct CloseCursorTask {
-    completion: Receiver<()>,
+    shared: Arc<Shared>,
 }
 
 #[napi]
@@ -202,7 +248,14 @@ impl Task for CloseCursorTask {
     type JsValue = ();
 
     fn compute(&mut self) -> Result<Self::Output> {
-        let _ = self.completion.recv();
+        let shared = &self.shared;
+        let mut state = shared.lock()?;
+        // Under the lock this wake-up cannot be missed, unlike the one close()
+        // sent from the JavaScript thread.
+        shared.changed.notify_all();
+        while !state.worker_done {
+            state = shared.wait(state)?;
+        }
         Ok(())
     }
 
@@ -216,9 +269,7 @@ fn run_worker(
     sheet_name: String,
     epoch: u16,
     options: ParsedStreamOptions,
-    sender: Sender<StreamMessage>,
-    cancel_receiver: Receiver<()>,
-    cancelled: Arc<AtomicBool>,
+    shared: &Shared,
 ) {
     let mut batch = Vec::with_capacity(options.batch_size);
     let result = produce_rows(
@@ -226,12 +277,12 @@ fn run_worker(
         &sheet_name,
         epoch,
         &options.read,
-        &cancelled,
+        &shared.cancelled,
         |row| {
             batch.push(row);
             if batch.len() == options.batch_size {
                 let ready = std::mem::replace(&mut batch, Vec::with_capacity(options.batch_size));
-                send_message(&sender, &cancel_receiver, StreamMessage::Batch(ready))?;
+                send_message(shared, StreamMessage::Batch(ready))?;
             }
             Ok(())
         },
@@ -239,30 +290,36 @@ fn run_worker(
 
     match result {
         Ok(()) => {
-            if !batch.is_empty()
-                && send_message(&sender, &cancel_receiver, StreamMessage::Batch(batch)).is_err()
-            {
+            if !batch.is_empty() && send_message(shared, StreamMessage::Batch(batch)).is_err() {
                 return;
             }
-            let _ = send_message(&sender, &cancel_receiver, StreamMessage::End);
+            let _ = send_message(shared, StreamMessage::End);
         }
-        Err(error) if cancelled.load(Ordering::Acquire) => {
-            let _ = error;
-        }
+        Err(_) if shared.cancelled() => {}
         Err(error) => {
-            let _ = send_message(&sender, &cancel_receiver, StreamMessage::Error(error));
+            let _ = send_message(shared, StreamMessage::Error(error));
         }
     }
 }
 
-fn send_message(
-    sender: &Sender<StreamMessage>,
-    cancel_receiver: &Receiver<()>,
-    message: StreamMessage,
-) -> ReaderResult<()> {
-    select! {
-        send(sender, message) -> result => result.map_err(|_| ReaderError::aborted()),
-        recv(cancel_receiver) -> _ => Err(ReaderError::aborted()),
+/// Hands `message` to `next_batch` once the previous one was taken.
+fn send_message(shared: &Shared, message: StreamMessage) -> ReaderResult<()> {
+    let poisoned = || ReaderError::new("INTERNAL_ERROR", "Row cursor lock was poisoned");
+    let mut state = shared.state.lock().map_err(|_| poisoned())?;
+    loop {
+        if shared.cancelled() {
+            return Err(ReaderError::aborted());
+        }
+        if state.message.is_none() {
+            state.message = Some(message);
+            shared.changed.notify_all();
+            return Ok(());
+        }
+        state = shared
+            .changed
+            .wait_timeout(state, CANCEL_POLL)
+            .map_err(|_| poisoned())?
+            .0;
     }
 }
 
